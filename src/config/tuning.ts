@@ -56,7 +56,7 @@ export const TUNING = {
   },
   // all enemies die in ONE hit. Ranged enemies: walk 1 block/step, only shoot while standing
   // still — see player → stand `aimMs` → shoot once → `reloadMs` reload. Crawlers RUN.
-  enemyFire: { aimMs: 3000, reloadMs: 5000 },
+  enemyFire: { aimMs: 650, reloadMs: 1050 },   // fast & dangerous: a shot roughly every ~1.7s, not every 8s
   enemies: {
     guard:     { hp: 1, sightPx: 360, projSpeed: 540 },
     crawler:   { hp: 1, sightPx: 340, fragile: true },
