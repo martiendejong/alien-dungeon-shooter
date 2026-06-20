@@ -1,0 +1,7 @@
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  base: './',
+  server: { host: true, port: 5180, open: false },
+  build: { target: 'es2020', sourcemap: true }
+});

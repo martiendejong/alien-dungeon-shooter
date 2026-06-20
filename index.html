@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SUBTERRA — Alien Dungeon Shooter</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: #05070c; color: #c9d4e0;
+      font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden;
+    }
+    #game { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    canvas { image-rendering: pixelated; box-shadow: 0 0 60px rgba(0,0,0,0.8); }
+    #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      letter-spacing: 4px; font-size: 14px; color: #4a5a70; }
+  </style>
+</head>
+<body>
+  <div id="game"><div id="loading">SUBTERRA — LOADING…</div></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
