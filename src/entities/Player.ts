@@ -8,7 +8,7 @@ export interface LevelQuery {
   darknessAt(x: number, y: number): number;
 }
 
-type State = 'idle' | 'turn' | 'step' | 'run' | 'jumpUp' | 'jumpFwd' | 'fall' | 'hang' | 'climb' | 'climbUp' | 'cover' | 'melee' | 'dead';
+type State = 'idle' | 'turn' | 'step' | 'run' | 'jumpUp' | 'jumpFwd' | 'fall' | 'hang' | 'climb' | 'climbUp' | 'cover' | 'melee' | 'dash' | 'dead';
 
 interface Action {
   type: State;
@@ -48,6 +48,7 @@ export class Player {
   /** Called when a shot is fired: stand still and reload for `ms`. */
   beginReload(ms: number) { this.reloadUntil = this.scene.time.now + ms; }
   get reloading() { return this.scene.time.now < this.reloadUntil; }
+  private dashCdUntil = 0;          // dash cooldown (a quick i-frame burst)
   private bufferedJump = false;     // a jump was pressed during a step/run; resolve when it finishes
   private bufferedJumpRun = false;  // ...and it was during a RUN → big jump
   private runDist = 0;              // blocks covered in the CURRENT unbroken run (run-jump needs >= 3)
@@ -179,6 +180,8 @@ export class Player {
     }
     // reloading only blocks SHOOTING (handled by the weapon cooldown) — you can still move/jump/climb
     if (input.meleePressed && this.canMeleeNow) { this.beginMelee(time); return; }
+    // dash (double-tap a direction): quick i-frame burst
+    if (input.dashPressed && time > this.dashCdUntil) { this.beginDash((input.dashDir || this.facing) as 1 | -1); return; }
 
     // ladder entry (Up/Down) takes priority over jumps when a ladder is present
     if (input.upHeld && this.grid.isLadder(this.col, this.row - 1)) { this.enterClimb(); return; }
@@ -269,6 +272,24 @@ export class Player {
         this.land(c2, this.row);
         if (this.bufferedJump) { this.bufferedJump = false; this.beginJumpFwd(this.bufferedJumpRun); } // jump while walking = standing distance
       } });
+  }
+
+  /** A quick dash with i-frames — double-tap a direction. Stops before a wall and won't dash into a pit. */
+  private beginDash(dir: 1 | -1) {
+    let clear = 0;
+    for (let d = 1; d <= M.dashBlocks; d++) {
+      const c = this.col + dir * d;
+      if (!this.canStand(c, this.row) || this.grid.isSpike(c, this.row)) break;
+      clear = d;
+    }
+    this.facing = dir; this.runDist = 0;
+    const now = this.scene.time.now;
+    this.dashCdUntil = now + M.dashCdMs;
+    this.invulnUntil = Math.max(this.invulnUntil, now + M.dashMs + 120); // i-frames through the dash
+    if (clear === 0) { this.beginTurn(dir); return; }                    // nowhere to go → just turn
+    const dest = this.col + dir * clear;
+    this.start({ type: 'dash', dur: M.dashMs, toX: this.cx(dest), toY: this.y, arc: false, peak: 0, strides: clear,
+      toCol: dest, toRow: this.row, onDone: () => this.land(dest, this.row) });
   }
 
   private beginRun(dir: 1 | -1) {
@@ -454,6 +475,7 @@ export class Player {
     const bobY = this.y - this.bob;
     if (!this.alive) this.vis.setTint(0x556070);
     else if (this.state === 'cover') this.vis.setTint(0x2b3340);
+    else if (this.state === 'dash') this.vis.setTint(0x6ff0ff);   // dash = cyan streak
     else if (now < this.invulnUntil) this.vis.setTint(0xff6a6a);
     else this.vis.clearTint();
 
@@ -471,7 +493,7 @@ export class Player {
     if (this.coleSheet) {
       switch (this.state) {
         case 'step': animKey = 'cole_walk'; break;
-        case 'run': animKey = 'cole_run'; break;
+        case 'run': case 'dash': animKey = 'cole_run'; break;
         case 'jumpUp': case 'jumpFwd': animKey = 'cole_jump'; break;
         case 'climb': if (this.coleSheet3) { animKey = 'cole_climbladder'; scale = Player.SCALE3; } else animKey = 'cole_walk'; break;
         case 'climbUp': if (this.coleSheet2) { animKey = 'cole_mantle'; scale = Player.SCALE2; } else animKey = 'cole_jump'; break;
@@ -488,7 +510,7 @@ export class Player {
     } else {
       switch (this.state) {
         case 'step': animKey = 'cole_walk'; break;
-        case 'run': animKey = 'cole_run'; break;
+        case 'run': case 'dash': animKey = 'cole_run'; break;
         case 'climb': case 'climbUp': case 'hang': animKey = 'cole_climb'; break;
         case 'jumpUp': case 'jumpFwd': staticTex = 'cole_jump'; break;
         case 'fall': staticTex = 'cole_fall'; break;

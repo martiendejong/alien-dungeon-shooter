@@ -14,6 +14,7 @@ export const TUNING = {
     standJump: 5,   standJumpMs: 920, standJumpPeak: 1.9, // gap<=5 land, ==6 grab, >6 fall (clear a 5-wide gap → grab the far edge)
     runJump: 6,     runJumpMs: 1080,  runJumpPeak: 2.1,   // gap<=6 land, ==7 grab, >7 fall
     fallPxPerMs: 0.9,
+    dashBlocks: 5, dashMs: 200, dashCdMs: 650, // quick i-frame dash (double-tap a direction)
     climbUpMs: 500,
     climbSpeed: 130,   // ladder climb px/s
     runByDefault: true, // movement is RUN by default; Shift toggles to careful WALK

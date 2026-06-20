@@ -11,6 +11,9 @@ export class InputManager {
   jumpPressed = false;   // Space → forward jump
   upPressed = false;     // Up / W → vertical jump / climb
   downPressed = false;   // Down / S → grab a ledge to hang; press again to drop
+  dashPressed = false;   // double-tap left/right → dash
+  dashDir: 1 | -1 = 1;
+  private lastLeftTap = -9999; private lastRightTap = -9999;
   interactPressed = false;
   grenadePressed = false;
   reloadPressed = false;
@@ -50,6 +53,12 @@ export class InputManager {
     this.meleePressed = p.rightButtonDown() || JD(this.k.melee);
 
     this.weaponSlot = JD(this.k.one) ? 1 : JD(this.k.two) ? 2 : JD(this.k.three) ? 3 : 0;
+
+    // double-tap left/right → dash
+    this.dashPressed = false;
+    const TAP = 260;
+    if (JD(this.k.left) || JD(this.k.a)) { if (_time - this.lastLeftTap < TAP) { this.dashPressed = true; this.dashDir = -1; } this.lastLeftTap = _time; }
+    if (JD(this.k.right) || JD(this.k.d)) { if (_time - this.lastRightTap < TAP) { this.dashPressed = true; this.dashDir = 1; } this.lastRightTap = _time; }
   }
 
   get runMode() { return !this.k.shift.isDown; } // RUN by default; hold Shift to WALK carefully

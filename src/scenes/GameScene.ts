@@ -132,7 +132,17 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
 
     this.hud.objective = this.level.objective;
     this.events.on('player-melee', () => this.meleeHits.clear());
-    this.events.on('enemy-died', (en: Enemy) => { Sfx.enemyDeath(); if (en.isBoss) { this.bossDead = true; this.flashMessage(`${en.bossName} DOWN — reach the exit`); } });
+    this.events.on('enemy-died', (en: Enemy) => {
+      Sfx.enemyDeath();
+      this.deathBurst(en.x, en.y, en.isBoss);
+      this.cameras.main.shake(en.isBoss ? 380 : 90, en.isBoss ? 0.013 : 0.0045);
+      if (en.isBoss) {
+        this.bossDead = true;
+        this.cameras.main.flash(320, 255, 244, 210);
+        this.tweens.add({ targets: this.cameras.main, zoom: 2.2, duration: 150, yoyo: true, hold: 260, ease: 'Sine.inOut' }); // kill-cam punch
+        this.flashMessage(`${en.bossName} DOWN — reach the exit`);
+      }
+    });
     this.events.on('player-died', () => this.onPlayerDied());
 
     const sl = this.level.searchlights?.[0];
@@ -399,8 +409,23 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     const f = this.add.image(x, y, 'spark').setDepth(70).setScale(1.9).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: f, alpha: 0, scale: 0.4, duration: 90, onComplete: () => f.destroy() });
     this.cameras.main.shake(60, 0.004); // recoil kick on every shot
+    // ejected shell casing
+    const dir = this._player ? this._player.facing : 1;
+    const sc = this.add.image(x, y, 'particle').setDepth(63).setScale(0.5).setTint(0xffcf6a);
+    this.tweens.add({ targets: sc, x: x - dir * (10 + Math.random() * 8), y: y + 16 + Math.random() * 6, angle: 220, alpha: 0, duration: 380, onComplete: () => sc.destroy() });
     Sfx.shot();
     this.alertSoldiers(); // a shot gives you away: every soldier turns to face you and holds for 5s
+  }
+
+  /** Particle burst for a kill (bigger for bosses) — pure visual juice. */
+  private deathBurst(x: number, y: number, big: boolean) {
+    const n = big ? 26 : 10, reach = big ? 170 : 90;
+    this.lighting.pulse(x, y, big ? 190 : 80, 1, big ? 200 : 90);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.6, sp = reach * (0.5 + Math.random());
+      const p = this.add.image(x, y, 'spark').setDepth(72).setBlendMode(Phaser.BlendModes.ADD).setTint(big ? 0xff7a3a : 0xffd060).setScale(big ? 1.6 : 1);
+      this.tweens.add({ targets: p, x: x + Math.cos(a) * sp, y: y + Math.sin(a) * sp, alpha: 0, scale: 0.2, duration: big ? 520 : 300, onComplete: () => p.destroy() });
+    }
   }
 
   /** A shot was fired (player or enemy): all soldiers snap to face the player and hold position 5s. */
