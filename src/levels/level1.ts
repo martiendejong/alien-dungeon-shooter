@@ -35,12 +35,12 @@ function buildGrid(): string[] {
 
   // ladders (each spans exactly one floor gap)
   Lad(18, 6, 10);   // top-middle room → big floor
-  Lad(27, 6, 14);   // top-middle room → centre floor
+  Lad(29, 6, 14);   // top-middle room → centre floor (col 29 clears the big floor — no pierce)
   Lad(13, 10, 18);  // big floor → left floor (the long left ladder)
   Lad(10, 18, 22);  // left floor → bottom corridor
   Lad(25, 14, 18);  // centre floor → mid floor
   Lad(24, 18, 22);  // bottom corridor → mid floor (back to elevator)
-  Lad(40, 22, 32);  // bottom corridor → right-chamber floor
+  Lad(36, 22, 32);  // bottom corridor → right-chamber floor (col 36 clears the chamber ledges — no pierce)
 
   // gate cells
   Vl(8, 19, 21);    // YELLOW gate — seals the bottom-left room

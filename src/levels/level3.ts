@@ -1,46 +1,37 @@
 import { LevelData } from './types';
 
-// LEVEL 3 — "THE NEST". Bigger cavern: COLS 80→108, ROWS 28→36, platform spacing 3→4.
-// Four tiers instead of three (an extra mid-platform D added). Wider platforms, longer traversal.
-const COLS = 108, ROWS = 36;
+// LEVEL 3 — "THE NEST". Claustrophobic switchback ASCENT through tight organic tunnels carved in solid
+// rock: climb the ladder shafts, jump the acid pits, weave up corridor by corridor to THE QUEEN's chamber
+// at the top. Walls press in on every side except the path.
+const COLS = 72, ROWS = 40;
+const PUR = 0xb05aff, TEAL = 0x5affd0;
 
 function buildGrid(): string[] {
   const g: string[][] = Array.from({ length: ROWS }, () => Array(COLS).fill('#'));
   const set = (c: number, r: number, ch: string) => { if (c >= 0 && c < COLS && r >= 0 && r < ROWS) g[r][c] = ch; };
-  const carve = (c0: number, c1: number, r0: number, r1: number) => { for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) set(c, r, '.'); };
-  const plat = (fr: number, c0: number, c1: number) => { for (let c = c0; c <= c1; c++) set(c, fr, '#'); };
-  const spikePit = (c0: number, c1: number, fr: number) => { for (let c = c0; c <= c1; c++) { set(c, fr, '.'); set(c, fr + 1, 'S'); } };
-  const ladder = (col: number, r0: number, r1: number) => { for (let r = r0; r <= r1; r++) set(col, r, 'L'); };
+  const corr = (fr: number, c0: number, c1: number) => { for (let r = fr - 3; r <= fr - 1; r++) for (let c = c0; c <= c1; c++) set(c, r, '.'); };
+  const room = (fr: number, c0: number, c1: number, h: number) => { for (let r = fr - h; r <= fr - 1; r++) for (let c = c0; c <= c1; c++) set(c, r, '.'); };
+  const shaft = (col: number, frU: number, frL: number) => { for (let r = frU; r <= frL - 1; r++) set(col, r, 'L'); };
+  const pit = (fr: number, c0: number, c1: number) => { for (let c = c0; c <= c1; c++) { set(c, fr, '.'); set(c, fr + 1, 'S'); } };
 
-  carve(2, 106, 3, 34);   // open cavern; bottom floor = row 35
+  // QUEEN chamber at the top (floor 5), corridors below (10,15,20,25,30), spawn corridor at the bottom (35)
+  room(5, 4, 66, 4);
+  corr(10, 5, 66); corr(15, 5, 66); corr(20, 5, 66); corr(25, 5, 66); corr(30, 5, 66); corr(35, 3, 66);
 
-  // four platforms (4-row spacing: rows 27, 22, 17, 11, 6)
-  plat(27, 28, 86);   // platform A (wide ledge, lower)
-  plat(22, 4,  58);   // platform B (mid-left) — NEW extra tier
-  plat(17, 40, 106);  // platform C (mid-right, mirrored)
-  plat(11, 4,  72);   // platform D (upper)
-  plat(6,  42, 106);  // platform E — the Queen's perch
+  // ladder shafts — alternating ends; you climb UP each one after walking the corridor end-to-end
+  shaft(64, 30, 35); shaft(7, 25, 30); shaft(64, 20, 25); shaft(7, 15, 20); shaft(64, 10, 15); shaft(7, 5, 10);
 
-  // ladders (each spans exactly one tier gap)
-  ladder(40, 27, 34);  // bottom → A
-  ladder(32, 22, 26);  // A → B
-  ladder(52, 17, 21);  // B → C
-  ladder(50, 11, 16);  // C → D
-  ladder(48, 6,  10);  // D → E
+  // acid pits to jump
+  pit(35, 30, 32); pit(30, 40, 42); pit(25, 28, 32); pit(20, 44, 46); pit(15, 26, 28); pit(10, 40, 42);
 
-  // bottom chasm (6-wide: run-jump + grab)
-  for (let c = 24; c <= 29; c++) set(c, 35, '.');
-  spikePit(64, 66, 27);   // spike pit on platform A
-  spikePit(24, 26, 22);   // spike pit on platform B
-
-  // markers
-  set(4,   34, 'P'); set(14, 34, 'y'); set(52, 34, 'c');       // bottom (+ SMG)
-  set(44,  26, 'm'); set(70,  26, 'c'); set(60, 26, 'U');       // platform A (brute)
-  set(14,  21, 'c'); set(36,  21, 'r'); set(50, 21, 'H');       // platform B (hunter) NEW
-  set(56,  16, 'c'); set(80,  16, 'g'); set(96, 16, 'F');       // platform C (gundrone)
-  set(20,  34, 'J');                                             // leaper on floor
-  set(10,  10, 'c');                                             // guard on D
-  set(56,  6,  'm'); set(76, 6, 'Q'); set(96, 6, 'E');          // platform E — THE QUEEN + portal-gate
+  // markers (standing cell = floorRow - 1)
+  set(4, 34, 'P'); set(16, 34, 'y'); set(44, 34, 'c'); set(56, 34, 'J');   // spawn corridor (+ SMG, leaper)
+  set(50, 29, 'c'); set(28, 29, 'H'); set(12, 29, 'c');                    // C30 (+ hunter)
+  set(22, 24, 'c'); set(46, 24, 'U'); set(60, 24, 'c');                    // C25 (+ brute)
+  set(52, 19, 'c'); set(24, 19, 'F');                                      // C20 (+ gundrone)
+  set(20, 14, 'c'); set(48, 14, 'm'); set(60, 14, 'c');                    // C15 (+ medkit)
+  set(40, 9, 'c'); set(20, 9, 'H');                                        // C10 (+ hunter)
+  set(10, 4, 'm'); set(40, 4, 'Q'); set(60, 4, 'E');                       // QUEEN chamber + portal-gate
 
   return g.map(r => r.join(''));
 }
@@ -48,39 +39,38 @@ function buildGrid(): string[] {
 export const LEVEL3: LevelData = {
   id: 'level3',
   name: 'THE NEST',
-  objective: 'Climb the alien cavern: chasm, acid, four laddered tiers. A swarm breach hits — kill THE QUEEN at the top.',
+  objective: 'Climb the hive: tight organic tunnels, acid-pit jumps, ladder shafts. A swarm breach hits — reach THE QUEEN at the top.',
   block: 32,
   next: 'level4',
-  intro: 'Through the portal — an alien world.',
+  intro: 'Through the portal — an alien warren. Tight and wet and watching.',
   outro: 'You claw your way back to Earth…',
   bgColor: 0x0c0814,
-  ambient: 0.74,
-  alarmAtRow: 17,
+  ambient: 0.75,
+  alarmAtRow: 16,                 // climbing past the middle trips the swarm
   alarmMsg: '⚠ THE NEST WAKES — SWARM INCOMING',
   checkpoints: [
-    { col: 32, floorRow: 27 }, { col: 4, floorRow: 22 },
-    { col: 50, floorRow: 17 }, { col: 4, floorRow: 11 }, { col: 40, floorRow: 6 },
+    { col: 62, floorRow: 30 }, { col: 9, floorRow: 25 }, { col: 62, floorRow: 20 },
+    { col: 9, floorRow: 15 }, { col: 62, floorRow: 10 },
   ],
   grid: buildGrid(),
   hazards: [
-    { col: 58, floorRow: 27, periodMs: 2200, onMs: 850, offset: 0   },
-    { col: 36, floorRow: 22, periodMs: 2200, onMs: 850, offset: 700 },
-    { col: 22, floorRow: 17, periodMs: 2200, onMs: 850, offset: 900 },
-    { col: 60, floorRow: 11, periodMs: 2000, onMs: 800, offset: 400 },
+    { col: 50, floorRow: 30, periodMs: 2200, onMs: 850, offset: 0    },
+    { col: 22, floorRow: 25, periodMs: 2200, onMs: 850, offset: 700  },
+    { col: 50, floorRow: 20, periodMs: 2000, onMs: 800, offset: 400  },
+    { col: 30, floorRow: 15, periodMs: 2000, onMs: 800, offset: 1000 },
   ],
   reinforcements: [
-    { kind: 'crawler', col: 50,  floorRow: 35 }, { kind: 'crawler', col: 68,  floorRow: 27 },
-    { kind: 'crawler', col: 20,  floorRow: 22 }, { kind: 'crawler', col: 44,  floorRow: 22 },
-    { kind: 'crawler', col: 70,  floorRow: 17 }, { kind: 'crawler', col: 86,  floorRow: 11 },
-    { kind: 'crawler', col: 80,  floorRow: 6  },
+    { kind: 'crawler', col: 20, floorRow: 30 }, { kind: 'crawler', col: 60, floorRow: 25 },
+    { kind: 'crawler', col: 20, floorRow: 20 }, { kind: 'crawler', col: 60, floorRow: 15 },
+    { kind: 'crawler', col: 30, floorRow: 10 }, { kind: 'crawler', col: 50, floorRow: 5 },
   ],
   lights: [
-    { col: 8,  row: 33, radius: 6, intensity: 0.85, color: 0xb05aff, flicker: 0.3  },
-    { col: 52, row: 25, radius: 6, intensity: 0.7,  color: 0x5affd0, flicker: 0.25 },
-    { col: 24, row: 20, radius: 6, intensity: 0.7,  color: 0xb05aff },
-    { col: 70, row: 15, radius: 5, intensity: 0.65, color: 0x5affd0, flicker: 0.3  },
-    { col: 30, row: 9,  radius: 6, intensity: 0.7,  color: 0xb05aff, flicker: 0.2  },
-    { col: 76, row: 5,  radius: 8, intensity: 0.9,  color: 0xff4ad0, flicker: 0.35 },
-    { col: 96, row: 5,  radius: 6, intensity: 0.9,  color: 0xff4ad0, flicker: 0.2  },
+    { col: 8,  row: 33, radius: 6, intensity: 0.85, color: PUR, flicker: 0.3  },
+    { col: 62, row: 28, radius: 5, intensity: 0.7,  color: TEAL, flicker: 0.25 },
+    { col: 9,  row: 23, radius: 5, intensity: 0.7,  color: PUR },
+    { col: 62, row: 18, radius: 5, intensity: 0.7,  color: TEAL, flicker: 0.3 },
+    { col: 9,  row: 13, radius: 5, intensity: 0.7,  color: PUR },
+    { col: 40, row: 3,  radius: 8, intensity: 0.9,  color: 0xff4ad0, flicker: 0.35 },
+    { col: 60, row: 3,  radius: 6, intensity: 0.9,  color: 0xff4ad0, flicker: 0.2  },
   ],
 };
