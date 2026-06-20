@@ -39,8 +39,9 @@ export interface LevelData {
   escapeMs?: number;      // once the alarm trips, you have this long to reach the exit or you die
   // sweeping searchlights: spot the player (if lit & not in cover) → spawn a hunter
   searchlights?: { x0: number; x1: number; y: number; speed: number }[];
-  // timed flame jets: deadly when ON; time your run. col + floor row + cycle.
-  hazards?: { col: number; floorRow: number; periodMs: number; onMs: number; offset: number }[];
+  // timed hazards: deadly when ON; time your run. col + floor row + cycle.
+  // kind: 'flame' (flame jet, default) or 'spike' (pop-out spike strip — classic PoP trap).
+  hazards?: { col: number; floorRow: number; periodMs: number; onMs: number; offset: number; kind?: 'flame' | 'spike' }[];
   // PoP-style timed gates: a pressure plate opens the linked gate for openMs, then it slams shut.
   // A gate is a vertical bar of solid blocks (col, rows row0..row1) that is CLOSED (solid) by default.
   // openMs: how long the gate stays open after the plate is hit (PoP timed gate).

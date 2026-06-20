@@ -69,11 +69,16 @@ export class Enemy extends Phaser.GameObjects.Sprite {
   /** Toughen this enemy for a later level: a distinct color, +tier hearts, and a 0.5s-spaced burst for shooters. */
   applyTier(tier: number) {
     if (tier <= 0 || this.isBoss) return;
-    this.maxHp += tier; this.hp = this.maxHp;
+    this.maxHp += tier; this.hp = this.maxHp;                                  // tankier each level
     const tint = Enemy.TIER_TINTS[Math.min(tier, Enemy.TIER_TINTS.length - 1)];
     if (tint !== undefined) { this.cfg.tint = tint; this.setTint(tint); }
+    const f = Math.max(0.42, 1 - tier * 0.15);                                 // shoot faster each level
+    this.cfg.aimMs = Math.round((this.cfg.aimMs ?? TUNING.enemyFire.aimMs) * f);
+    this.cfg.reloadMs = Math.round((this.cfg.reloadMs ?? TUNING.enemyFire.reloadMs) * f);
+    this.cfg.sightPx = Math.round((this.cfg.sightPx ?? 360) * (1 + tier * 0.12)); // see farther
+    if (this.cfg.projSpeed) this.cfg.projSpeed = Math.round(this.cfg.projSpeed * (1 + tier * 0.08)); // faster bullets
     if (this.behavior === 'ranged' || this.behavior === 'gunner' || this.behavior === 'drone')
-      this.cfg.burst = { count: 1 + tier, gapMs: 500 }; // multiple shots, 0.5s apart
+      this.cfg.burst = { count: 1 + tier, gapMs: 460 };                        // more shots per burst
   }
 
   /** A shot was fired (by anyone): soldiers snap to face the player and HOLD POSITION for 5s before

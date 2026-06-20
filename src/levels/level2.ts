@@ -15,6 +15,8 @@ function buildGrid(): string[] {
 
   // a timed bulkhead on ledge 7: plate on ledge 6 opens it — climb down and beat it to the next drop
   for (let r = 24; r <= 25; r++) set(14, r, '#');
+  // LOOSE TILES — stand too long and they crumble, dropping you to the ledge below (col 14 = ledge overlap)
+  set(14, led[5].row, 'T'); set(14, led[8].row, 'T'); set(14, led[11].row, 'T');
 
   // markers (standing cell = ledge.row - 1)
   set(4, led[0].row - 1, 'P');                              // spawn (top)
@@ -45,8 +47,9 @@ export const LEVEL2: LevelData = {
   plates: [{ id: 1, col: 8, floorRow: 23, color: 0x4aff6a }],
   grid: buildGrid(),
   hazards: [
-    { col: 12, floorRow: 20, periodMs: 2200, onMs: 850, offset: 0 },
+    { col: 12, floorRow: 20, periodMs: 2200, onMs: 850, offset: 0, kind: 'spike' },
     { col: 16, floorRow: 35, periodMs: 2200, onMs: 850, offset: 700 },
+    { col: 10, floorRow: 44, periodMs: 1800, onMs: 700, offset: 300, kind: 'spike' },
   ],
   reinforcements: [
     { kind: 'crawler', col: 8, floorRow: 51 }, { kind: 'crawler', col: 20, floorRow: 51 },

@@ -54,12 +54,15 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
   private escapeUntil = 0;
   private searchX = 0; private searchDir: 1 | -1 = 1; private searchBeam?: Phaser.GameObjects.Image; private spottedCd = 0;
   private waveQueue: { kind: EnemyKind; col: number; floorRow: number }[] = []; private nextWaveAt = 0;
-  private hazards: { col: number; floorRow: number; periodMs: number; onMs: number; offset: number; img: Phaser.GameObjects.Image }[] = [];
+  private hazards: { col: number; floorRow: number; periodMs: number; onMs: number; offset: number; kind?: 'flame' | 'spike'; img: Phaser.GameObjects.Image }[] = [];
   // PoP-style timed gates + pressure plates
   private gateCells = new Set<number>();
   private gates: { id: number; col: number; row0: number; row1: number; openMs: number; stayOpen?: boolean; color?: number; openUntil: number; open: boolean; imgs: Phaser.GameObjects.Image[] }[] = [];
   private plates: { id: number; col: number; floorRow: number; color?: number; img: Phaser.GameObjects.Image; pressed: boolean }[] = [];
   private lastPlayerX = NaN;
+  // loose/crumbling tiles ('T'): solid until you stand on one, then it shakes and falls away
+  private looseCells = new Set<number>();
+  private looseTiles: { col: number; row: number; img: Phaser.GameObjects.Image; fallAt: number; falling: boolean }[] = [];
   private ended = false;
   private paused = false;
   private msgUntil = 0;
@@ -81,6 +84,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     this.escapeUntil = 0; this.searchBeam = undefined; this.spottedCd = 0; this.hazards = []; this.waveQueue = []; this.nextWaveAt = 0;
     this.enemies = []; this.pickups = []; this.boss = undefined;
     this.gates = []; this.plates = []; this.gateCells = new Set<number>(); this.lastPlayerX = NaN;
+    this.looseCells = new Set<number>(); this.looseTiles = [];
     this.grenadeCount = TUNING.grenade.startCount; this.meleeHits.clear();
     this.level = LEVELS[data?.level ?? 'level1'];
     this.levelTier = Math.max(0, (parseInt(this.level.id.replace(/\D/g, ''), 10) || 1) - 1); // level1→0, level2→1 … each = a new enemy color + extra life
@@ -88,6 +92,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     this.block = this.level.block;
     // gate cells must be known BEFORE buildSolids so the wall mesh skips them (doors are drawn separately)
     for (const ga of this.level.gates ?? []) for (let r = ga.row0; r <= ga.row1; r++) this.gateCells.add(r * this.grid.cols + ga.col);
+    for (let r = 0; r < this.grid.rows; r++) for (let c = 0; c < this.grid.cols; c++) if (this.grid.charAt(c, r) === 'T') this.looseCells.add(r * this.grid.cols + c);
     this.makePuzzleTextures();
     const W = this.grid.worldW, H = this.grid.worldH;
 
@@ -148,7 +153,10 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     const sl = this.level.searchlights?.[0];
     if (sl) { this.searchX = sl.x0; this.searchBeam = this.add.image(sl.x0, sl.y, 'searchbeam').setOrigin(0.5, 0).setDepth(58).setBlendMode(Phaser.BlendModes.ADD); }
     for (const h of this.level.hazards ?? []) {
-      const img = this.add.image(h.col * this.block + this.block / 2, h.floorRow * this.block, 'flame').setOrigin(0.5, 1).setDepth(55).setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
+      const spike = h.kind === 'spike';
+      const img = this.add.image(h.col * this.block + this.block / 2, h.floorRow * this.block, spike ? 'spikes' : 'flame')
+        .setOrigin(0.5, 1).setDepth(55).setVisible(false);
+      if (!spike) img.setBlendMode(Phaser.BlendModes.ADD); // flame glows; spikes are solid metal
       this.hazards.push({ ...h, img });
     }
 
@@ -158,8 +166,8 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
 
   // ---- world build ----------------------------------------------------------
   private cellHash(c: number, r: number) { return (((c * 73856093) ^ (r * 19349663) ^ (c * r * 0x9e37)) >>> 0); }
-  /** solid for the static wall mesh — excludes gate/door cells, which are drawn & collided separately */
-  private isWall(c: number, r: number) { return this.grid.isSolid(c, r) && !this.gateCells.has(r * this.grid.cols + c); }
+  /** solid for the static wall mesh — excludes gate/door + loose-tile cells, which are drawn separately */
+  private isWall(c: number, r: number) { const k = r * this.grid.cols + c; return this.grid.isSolid(c, r) && !this.gateCells.has(k) && !this.looseCells.has(k); }
 
   private makePuzzleTextures() {
     if (!this.textures.exists('door')) {
@@ -176,6 +184,15 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       g.fillStyle(0x3a2f1a, 1).fillRect(2, b - 9, b - 4, 7);
       g.fillStyle(0xffcf3a, 1).fillRect(5, b - 8, b - 10, 4);                  // glowing button top
       g.generateTexture('plate', b, b); g.destroy();
+    }
+    if (!this.textures.exists('tile_loose')) {
+      const b = this.block, g = this.add.graphics();
+      g.fillStyle(0x6a5a48, 1).fillRect(0, 0, b, b);                      // cracked sandstone slab
+      g.fillStyle(0x7e6c54, 1).fillRect(0, 0, b, 4);
+      g.lineStyle(2, 0x3a2f22, 1);                                        // crack lines
+      g.lineBetween(6, 2, 12, b - 4).lineBetween(b - 8, 3, b - 14, b - 5).lineBetween(2, b / 2, b - 2, b / 2 + 4);
+      g.lineStyle(1, 0x241c14, 1).strokeRect(0, 0, b, b);
+      g.generateTexture('tile_loose', b, b); g.destroy();
     }
     if (!this.textures.exists('plate_dn')) {
       const b = this.block, g = this.add.graphics();
@@ -200,6 +217,11 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       const img = this.add.image(pl.col * b, (pl.floorRow - 1) * b, 'plate').setOrigin(0, 0).setDepth(23);
       if (pl.color !== undefined) img.setTint(pl.color);
       this.plates.push({ ...pl, img, pressed: false });
+    }
+    for (const k of this.looseCells) {
+      const col = k % this.grid.cols, row = Math.floor(k / this.grid.cols);
+      const img = this.add.image(col * b, row * b, 'tile_loose').setOrigin(0, 0).setDepth(22).setDisplaySize(b, b);
+      this.looseTiles.push({ col, row, img, fallAt: 0, falling: false });
     }
   }
 
@@ -558,6 +580,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       }
     }
     for (const e of this.enemies) e.update(time, delta);
+    this.updateLooseTiles(time);
     this.updatePuzzles(time);
     this.updateAlarm(time, delta);
     this.lighting.update(time);
@@ -645,6 +668,23 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       if (dest >= 0) this._player.revive(g.col + dir, dest);
     }
   }
+  /** Loose tiles: when you stand on one it shakes for ~0.4s, then drops away and you fall through. */
+  private updateLooseTiles(time: number) {
+    const p = this._player; const b = this.block;
+    for (const t of this.looseTiles) {
+      if (t.falling) continue;
+      const onIt = p?.alive && p.col === t.col && p.row === t.row;
+      if (onIt && t.fallAt === 0) t.fallAt = time + 420;           // armed — start the timer
+      if (t.fallAt > 0 && time < t.fallAt) { t.img.x = t.col * b + (Math.floor(time / 45) % 2 ? 1.5 : -1.5); } // shake
+      else if (t.fallAt > 0 && time >= t.fallAt) {                 // crumble: open the cell and drop the tile
+        t.falling = true; t.img.x = t.col * b;
+        this.grid.setOpen(t.col, t.row, true);
+        Sfx.land();
+        this.tweens.add({ targets: t.img, y: t.img.y + b * 4, alpha: 0, angle: 40, duration: 600, onComplete: () => t.img.destroy() });
+      }
+    }
+  }
+
   private updatePuzzles(time: number) {
     const p = this._player;
     const b = this.block;

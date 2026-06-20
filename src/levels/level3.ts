@@ -42,8 +42,9 @@ export const LEVEL3: LevelData = {
   checkpoints: [{ col: 14, floorRow: 37 }, { col: 14, floorRow: 25 }, { col: 14, floorRow: 13 }],
   grid: buildGrid(),
   hazards: [
-    { col: 16, floorRow: 34, periodMs: 2200, onMs: 850, offset: 0 },
+    { col: 16, floorRow: 34, periodMs: 2200, onMs: 850, offset: 0, kind: 'spike' },
     { col: 12, floorRow: 19, periodMs: 2000, onMs: 800, offset: 600 },
+    { col: 18, floorRow: 28, periodMs: 1900, onMs: 750, offset: 300, kind: 'spike' },
   ],
   reinforcements: [
     { kind: 'crawler', col: 14, floorRow: 37 }, { kind: 'crawler', col: 14, floorRow: 25 },

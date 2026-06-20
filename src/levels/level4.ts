@@ -11,6 +11,7 @@ function buildGrid(): string[] {
   const led = buildShaft(g, COLS, ROWS, 5, 15);
   for (let r = 48; r <= 50; r++) for (let c = 2; c <= 25; c++) set(c, r, '.'); // COMMANDER chamber (floor 51)
   for (let r = 24; r <= 25; r++) set(14, r, '#');                              // timed shutter on ledge 7
+  set(14, led[5].row, 'T'); set(14, led[8].row, 'T'); set(14, led[11].row, 'T'); // loose/crumbling tiles
 
   const L = led;
   set(4, L[0].row - 1, 'P'); set(20, L[1].row - 1, 'z');     // spawn + RIFLE
@@ -40,8 +41,9 @@ export const LEVEL4: LevelData = {
   plates: [{ id: 1, col: 8, floorRow: 23, color: 0x4aff6a }],
   grid: buildGrid(),
   hazards: [
-    { col: 12, floorRow: 20, periodMs: 2200, onMs: 850, offset: 0 },
+    { col: 12, floorRow: 20, periodMs: 2200, onMs: 850, offset: 0, kind: 'spike' },
     { col: 16, floorRow: 38, periodMs: 2200, onMs: 850, offset: 700 },
+    { col: 10, floorRow: 29, periodMs: 1900, onMs: 750, offset: 400, kind: 'spike' },
   ],
   reinforcements: [
     { kind: 'guard', col: 8, floorRow: 51 }, { kind: 'crawler', col: 20, floorRow: 51 },

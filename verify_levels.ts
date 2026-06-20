@@ -12,7 +12,7 @@ function check(L: LevelData) {
   const at = (c: number, r: number) => (r < 0 || r >= ROWS || c < 0 || c >= (rows[r]?.length ?? 0)) ? '.' : rows[r][c];
   const gateOpen = new Set<string>();
   for (const g of L.gates ?? []) for (let r = g.row0; r <= g.row1; r++) gateOpen.add(g.col + ',' + r);
-  const solid = (c: number, r: number) => gateOpen.has(c + ',' + r) ? false : (at(c, r) === '#' || at(c, r) === 'S');
+  const solid = (c: number, r: number) => gateOpen.has(c + ',' + r) ? false : (at(c, r) === '#' || at(c, r) === 'S' || at(c, r) === 'T');
   const ladder = (c: number, r: number) => at(c, r) === 'L';
   const stand = (c: number, r: number) => (solid(c, r) || ladder(c, r)) && !solid(c, r - 1) && !solid(c, r - 2);
 

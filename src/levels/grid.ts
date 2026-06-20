@@ -27,8 +27,8 @@ export class LevelGrid {
   }
 
   isSolid(c: number, r: number): boolean {
-    if (this.open.has(this.key(c, r))) return false;   // a door currently raised/open
-    const ch = this.charAt(c, r); return ch === '#' || ch === 'S';
+    if (this.open.has(this.key(c, r))) return false;   // a door currently raised/open, or a crumbled loose tile
+    const ch = this.charAt(c, r); return ch === '#' || ch === 'S' || ch === 'T'; // 'T' = loose tile (solid until it falls)
   }
   isSolidPx(x: number, y: number): boolean { return this.isSolid(Math.floor(x / this.block), Math.floor(y / this.block)); }
   isLadder(c: number, r: number): boolean { return this.charAt(c, r) === 'L'; }
