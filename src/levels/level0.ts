@@ -1,42 +1,35 @@
 import { LevelData } from './types';
 
-// LEVEL 0 — "INFILTRATION". Unarmed ascent. Six-ledge serpentine (was four) — longer ledges,
-// two extra horizontal gaps, two extra vertical grabs. Soldiers patrol each tier.
-const COLS = 84, ROWS = 30;
-// Serpentine: base(27)→A(24,left)→jump→B(24,right)→climb→C(21,right)→jump→D(21,left)
-//             →climb→E(18,left)→jump→F(18,right)→climb→G(15,left)→exit
+// LEVEL 0 — "INFILTRATION". A VERY BIG claustrophobic climb-in: eleven tight 3-high corridors carved
+// through solid rock, joined by 1-wide ladder shafts in a tall switchback. Unarmed the whole way —
+// soldiers patrol every corridor, so duck into shadow (hold C), time your move, jump the gaps, and climb
+// all the way up to the exit. Soldiers only.
+const COLS = 84, ROWS = 62;
+const FLOORS = [56, 51, 46, 41, 36, 31, 26, 21, 16, 11, 6]; // bottom → top (spawn at the bottom)
 
 function buildGrid(): string[] {
   const g: string[][] = Array.from({ length: ROWS }, () => Array(COLS).fill('#'));
   const set = (c: number, r: number, ch: string) => { if (c >= 0 && c < COLS && r >= 0 && r < ROWS) g[r][c] = ch; };
-  const carve = (c0: number, c1: number, r0: number, r1: number) => { for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) set(c, r, '.'); };
-  const plat = (fr: number, c0: number, c1: number) => { for (let c = c0; c <= c1; c++) set(c, fr, '#'); };
+  const corr = (fr: number, c0: number, c1: number) => { for (let r = fr - 3; r <= fr - 1; r++) for (let c = c0; c <= c1; c++) set(c, r, '.'); };
+  const shaft = (col: number, frU: number, frL: number) => { for (let r = frU; r <= frL - 1; r++) set(col, r, 'L'); }; // upper floor → above lower floor
+  const pit = (fr: number, c0: number, c1: number) => { for (let c = c0; c <= c1; c++) { set(c, fr, '.'); set(c, fr + 1, 'S'); } };
 
-  carve(2, 81, 1, 26);   // open the whole interior above the base floor (row 27)
-
-  // ledges — 3 rows apart (jump-up grab reaches exactly 3)
-  plat(24, 2, 28);   // A — left;  base(27)→A(24): climb at right-edge of A (col 28)
-  plat(24, 35, 81);  // B — right; A→B gap 29-34 (6-wide run-jump)
-  plat(21, 47, 81);  // C — right; B(24)→C(21): climb at left-edge of C (col 47)
-  plat(21, 2, 40);   // D — left;  C→D gap 41-46 (6-wide run-jump left)
-  plat(18, 2, 22);   // E — left;  D(21)→E(18): climb at right-edge of E (col 22)
-  plat(18, 29, 81);  // F — right; E→F gap 23-28 (6-wide run-jump)
-  plat(15, 2, 29);   // G — left;  F(18)→G(15): climb at left-edge of F (col 29); exit ledge
-
-  // border
-  for (let r = 0; r < ROWS; r++) { set(0, r, '#'); set(1, r, '#'); set(COLS-2, r, '#'); set(COLS-1, r, '#'); }
-  for (let c = 0; c < COLS; c++) { set(c, 0, '#'); set(c, 1, '#'); set(c, ROWS-2, '#'); set(c, ROWS-1, '#'); }
+  for (let i = 0; i < FLOORS.length; i++) corr(FLOORS[i], 4, 80);
+  // switchback ladder shafts: alternate right/left, climbing UP each corridor
+  for (let i = 0; i < FLOORS.length - 1; i++) shaft(i % 2 === 0 ? 80 : 5, FLOORS[i + 1], FLOORS[i]);
+  // a spike-pit jump in every corridor (alternating side)
+  for (let i = 0; i < FLOORS.length; i++) { const c = i % 2 === 0 ? 30 : 54; pit(FLOORS[i], c, c + 2); }
 
   // markers (standing cell = floorRow - 1)
-  set(4,  26, 'P');                                  // spawn — UNARMED, base floor
-  set(45, 26, 'g'); set(12, 26, 'h');                // base patrol + shadow pocket
-  set(56, 23, 'g'); set(38, 23, 'h');                // B patrol + niche
-  set(65, 20, 'g');                                  // C sentry (right wall)
-  set(20, 20, 'g'); set(8,  20, 'h');                // D patrol + niche
-  set(55, 17, 'g');                                  // F patrol
-  set(18, 17, 'h');                                  // shadow on E
-  set(20, 14, 'g');                                  // G guard before exit
-  set(4,  14, 'E');                                  // EXIT — top-left ledge G (row 15)
+  set(4, FLOORS[0] - 1, 'P');                                  // spawn — UNARMED, bottom-left
+  for (let i = 0; i < FLOORS.length; i++) {
+    const row = FLOORS[i] - 1;
+    const isLast = i === FLOORS.length - 1;
+    if (i > 0) set(i % 2 === 0 ? 55 : 25, row, 'g');           // a soldier on each corridor (not the spawn one)
+    set(i % 2 === 0 ? 18 : 62, row, 'h');                      // a shadow niche to hide in
+    if (i === 0) set(48, row, 'g');                            // one guard on the spawn corridor (far from spawn)
+    if (isLast) set(78, row, 'E');                             // EXIT at the top
+  }
 
   return g.map(r => r.join(''));
 }
@@ -44,23 +37,35 @@ function buildGrid(): string[] {
 export const LEVEL0: LevelData = {
   id: 'level0',
   name: 'INFILTRATION',
-  objective: 'UNARMED. Six ledge tiers — climb and run-jump the gaps to the top. Soldiers patrol every tier; hide in shadow (hold C) and time every move.',
+  objective: 'UNARMED. A long climb up tight tunnels — soldiers patrol every level. Hide in shadow (hold C), jump the spike pits, and reach the top unseen.',
   block: 32,
   next: 'level1',
   intro: 'SITE ECHO — climb in unseen. No weapons. Stay in the dark.',
-  outro: 'You haul up to the shaft… now find a weapon.',
+  outro: 'You reach the shaft… now find a weapon.',
   startUnarmed: true,
   bgColor: 0x06080d,
-  ambient: 0.62,
+  ambient: 0.64,                 // dark — you vanish in shadow anywhere a lamp isn't shining
+  alarmAtRow: 14,                // nearing the top tightens the patrols
+  alarmMsg: '⚠ MOVEMENT DETECTED — SWEEPING',
+  checkpoints: [
+    { col: 80, floorRow: 51 }, { col: 5, floorRow: 41 }, { col: 80, floorRow: 31 },
+    { col: 5, floorRow: 21 }, { col: 80, floorRow: 11 },
+  ],
   grid: buildGrid(),
+  reinforcements: [
+    { kind: 'guard', col: 40, floorRow: 26 }, { kind: 'guard', col: 40, floorRow: 16 },
+    { kind: 'guard', col: 40, floorRow: 11 },
+  ],
   lights: [
-    { col: 10, row: 26, radius: 5, intensity: 0.8,  flicker: 0.15 },
-    { col: 28, row: 24, radius: 5, intensity: 0.85 },                // base→A climb
-    { col: 38, row: 23, radius: 5, intensity: 0.8,  flicker: 0.2  }, // A→B landing
-    { col: 47, row: 20, radius: 5, intensity: 0.85 },                // B→C climb
-    { col: 24, row: 20, radius: 5, intensity: 0.8,  flicker: 0.15 }, // D patrol light
-    { col: 29, row: 17, radius: 5, intensity: 0.85 },                // E→F climb
-    { col: 18, row: 17, radius: 5, intensity: 0.8,  flicker: 0.2  }, // F→G climb zone
-    { col: 5,  row: 14, radius: 5, intensity: 0.9,  color: 0x9fe8ff }, // exit glow
+    { col: 78, row: 54, radius: 5, intensity: 0.8, flicker: 0.2 },
+    { col: 7,  row: 49, radius: 5, intensity: 0.8 },
+    { col: 78, row: 44, radius: 5, intensity: 0.8, flicker: 0.15 },
+    { col: 7,  row: 39, radius: 5, intensity: 0.8 },
+    { col: 78, row: 34, radius: 5, intensity: 0.8, flicker: 0.2 },
+    { col: 7,  row: 29, radius: 5, intensity: 0.8 },
+    { col: 78, row: 24, radius: 5, intensity: 0.8, flicker: 0.15 },
+    { col: 7,  row: 19, radius: 5, intensity: 0.8 },
+    { col: 78, row: 14, radius: 5, intensity: 0.8, flicker: 0.2 },
+    { col: 76, row: 5,  radius: 6, intensity: 0.9, color: 0x9fe8ff }, // exit glow
   ],
 };

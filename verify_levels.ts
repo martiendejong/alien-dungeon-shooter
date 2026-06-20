@@ -33,7 +33,7 @@ function check(L: LevelData) {
     push(c - 1, r); push(c + 1, r);
     for (const lr of [r - 2, r - 3, r - 4]) { push(c, lr); push(c - 1, lr); push(c + 1, lr); }      // climb up a ledge (<=3)
     for (const d of [-1, 1]) for (const k of [5, 6, 7]) push(c + d * k, r);                          // stand/run jump (+grab)
-    for (let rr = r + 1; rr < ROWS; rr++) { if (stand(c, rr)) { push(c, rr); break; } if (solid(c, rr)) break; } // drop
+    for (let rr = r + 1; rr < ROWS; rr++) { if (stand(c, rr)) { if (rr - r <= 11) push(c, rr); break; } if (solid(c, rr)) break; } // drop (>2 floors = lethal, not a valid path)
     if (ladder(c, r - 1)) { let t = r - 1; while (ladder(c, t)) t--; push(c, t + 1); }               // ladder up
     if (ladder(c, r) || ladder(c, r + 1)) { let b = r; while (ladder(c, b + 1)) b++; push(c, b + 1); } // ladder down
   }
