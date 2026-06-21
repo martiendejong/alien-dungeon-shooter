@@ -1,8 +1,13 @@
 import Phaser from 'phaser';
 import { TUNING } from '../config/tuning';
-import { LEVEL1 } from '../levels/level1';
-import { LEVEL2 } from '../levels/level2';
 import { LevelData, EnemyKind } from '../levels/types';
+import { parseLevel } from '../levels/format';
+import l0 from '../levels/level0.lvl?raw';
+import l1 from '../levels/level1.lvl?raw';
+import l2 from '../levels/level2.lvl?raw';
+import l3 from '../levels/level3.lvl?raw';
+import l4 from '../levels/level4.lvl?raw';
+import l5 from '../levels/level5.lvl?raw';
 import { LevelGrid } from '../levels/grid';
 import { Player, LevelQuery } from '../entities/Player';
 import { Enemy, EnemyHost } from '../entities/Enemy';
@@ -10,11 +15,16 @@ import { LightingSystem, PxLight } from '../systems/LightingSystem';
 import { InputManager } from '../systems/InputManager';
 import { WeaponSystem, CombatHost, WeaponKey } from '../systems/WeaponSystem';
 import { Sfx } from '../systems/Sfx';
-import { LEVEL3 } from '../levels/level3';
-import { LEVEL4 } from '../levels/level4';
-import { LEVEL5 } from '../levels/level5';
 
-const LEVELS: Record<string, LevelData> = { level1: LEVEL1, level2: LEVEL2, level3: LEVEL3, level4: LEVEL4, level5: LEVEL5 };
+// Levels are loaded from hand-editable plain-text .lvl files (see LEVELS_HOWTO.md).
+const LEVELS: Record<string, LevelData> = {
+  level0: parseLevel('level0', l0),
+  level1: parseLevel('level1', l1),
+  level2: parseLevel('level2', l2),
+  level3: parseLevel('level3', l3),
+  level4: parseLevel('level4', l4),
+  level5: parseLevel('level5', l5),
+};
 
 // Weapons found persist into later levels (the arsenal grows). Reset when a fresh run begins at level 1.
 const carriedWeapons = new Set<string>();

@@ -1,9 +1,5 @@
-import { LEVEL0 } from './src/levels/level0';
-import { LEVEL1 } from './src/levels/level1';
-import { LEVEL2 } from './src/levels/level2';
-import { LEVEL3 } from './src/levels/level3';
-import { LEVEL4 } from './src/levels/level4';
-import { LEVEL5 } from './src/levels/level5';
+import { readFileSync } from 'fs';
+import { parseLevel } from './src/levels/format';
 import type { LevelData } from './src/levels/types';
 
 function check(L: LevelData) {
@@ -50,4 +46,5 @@ function check(L: LevelData) {
   return { id: L.id, size: `${COLS}x${ROWS}`, spawn: P, exit: E, solvable, reach: seen.size, ladderPierces: pierces.length };
 }
 
-for (const L of [LEVEL0, LEVEL1, LEVEL2, LEVEL3, LEVEL4, LEVEL5]) console.log(JSON.stringify(check(L)));
+const IDS = ['level0', 'level1', 'level2', 'level3', 'level4', 'level5'];
+for (const id of IDS) console.log(JSON.stringify(check(parseLevel(id, readFileSync(`src/levels/${id}.lvl`, 'utf8')))));
