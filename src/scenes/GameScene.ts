@@ -681,10 +681,14 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
   /** Loose tiles: when you stand on one it shakes for ~0.4s, then drops away and you fall through. */
   private updateLooseTiles(time: number) {
     const p = this._player; const b = this.block;
+    // grounded states only — don't crumble a tile you're jumping/falling past. Use the player's PHYSICAL
+    // x to find the column it's actually over, so running across a tile (whose logical col lags) still arms it.
+    const grounded = !!p && (p.state === 'idle' || p.state === 'run' || p.state === 'step' || p.state === 'dash' || p.state === 'turn' || p.state === 'melee');
+    const pcol = p ? Math.floor(p.x / b) : -1;
     for (const t of this.looseTiles) {
       if (t.falling) continue;
-      const onIt = p?.alive && p.col === t.col && p.row === t.row;
-      if (onIt && t.fallAt === 0) t.fallAt = time + 420;           // armed — start the timer
+      const onIt = !!p && p.alive && grounded && pcol === t.col && p.row === t.row;
+      if (onIt && t.fallAt === 0) t.fallAt = time + 320;           // armed — start the timer
       if (t.fallAt > 0 && time < t.fallAt) { t.img.x = t.col * b + (Math.floor(time / 45) % 2 ? 1.5 : -1.5); } // shake
       else if (t.fallAt > 0 && time >= t.fallAt) {                 // crumble: open the cell and drop the tile
         t.falling = true; t.img.x = t.col * b;

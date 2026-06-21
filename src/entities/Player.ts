@@ -505,7 +505,8 @@ export class Player {
         default: animKey = 'cole_idle';
       }
       this.vis.setScale(scale);
-      if (animKey) { if (this.vis.anims.currentAnim?.key !== animKey) this.vis.play(animKey, true); }
+      // (re)play when it's a different anim OR the current one was stopped (e.g. after a turn set a static frame)
+      if (animKey) { if (this.vis.anims.currentAnim?.key !== animKey || !this.vis.anims.isPlaying) this.vis.play(animKey, true); }
       else { this.vis.anims.stop(); if (this.vis.texture.key !== frameTex || this.vis.frame.name !== frameName) this.vis.setTexture(frameTex, frameName); }
     } else {
       switch (this.state) {
@@ -516,7 +517,7 @@ export class Player {
         case 'fall': staticTex = 'cole_fall'; break;
         default: staticTex = 'cole_idle';
       }
-      if (animKey) { if (this.vis.anims.currentAnim?.key !== animKey) this.vis.play(animKey, true); }
+      if (animKey) { if (this.vis.anims.currentAnim?.key !== animKey || !this.vis.anims.isPlaying) this.vis.play(animKey, true); }
       else { this.vis.anims.stop(); if (this.vis.texture.key !== staticTex) this.vis.setTexture(staticTex); }
     }
 
