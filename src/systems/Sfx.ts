@@ -60,28 +60,64 @@ class SfxEngine {
   win()         { this.stopMusic(); [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.22, 'triangle', 0.18, undefined, i * 0.12)); }
   lose()        { [330, 247, 165].forEach((f, i) => this.tone(f, 0.4, 'sawtooth', 0.2, undefined, i * 0.18)); this.noise(0.6, 0.2, 600); }
 
-  // ---- music: a looping dark minor pulse; tempo rises with intensity --------
+  // ---- music: 16-step D-Phrygian dark-Buddhist groove — heavy sub, ~127 BPM ----
+  // Scale: D Eb F G A Bb C  (Phrygian — dark, Eastern, harmonically rich)
+  // Grid:  16th notes at 118 ms → quarter note 472 ms → 127 BPM
   private musicTimer = 0;
   private step = 0;
   private intensity = 0;
+  private readonly BASE_MS = 118;
   startMusic() {
     this.ensure(); if (!this.ctx || this.musicTimer) return;
-    this.musicTimer = window.setInterval(() => this.musicStep(), 280 - this.intensity * 60);
+    this.musicTimer = window.setInterval(() => this.musicStep(), this.BASE_MS - Math.round(this.intensity * 18));
   }
   stopMusic() { if (this.musicTimer) { clearInterval(this.musicTimer); this.musicTimer = 0; } }
-  setMusicIntensity(level: number) { // 0 calm .. 1 alarm
+  setMusicIntensity(level: number) {
     if (level === this.intensity) return;
     this.intensity = level;
     if (this.musicTimer) { this.stopMusic(); this.startMusic(); }
   }
   private musicStep() {
     if (this.muted || !this.ctx) return;
-    const bass = [55, 55, 73.4, 65.4];                 // A1 A1 D2 C2 — minor, brooding
-    const b = bass[this.step % 4];
-    this.tone(b, 0.26, 'sawtooth', 0.09);
-    if (this.step % 2 === 0) this.tone(b * 2, 0.10, 'triangle', 0.04);
-    if (this.intensity > 0 && this.step % 4 === 2) this.tone(b * 3, 0.08, 'square', 0.035); // alarm arp
-    if (this.step % 8 === 7) this.tone(220, 0.16, 'square', 0.04);
+    const pos = this.step % 16;
+
+    // Drone — D1 (36.7 Hz) sustained sine, re-triggered every 8 steps to keep rumble continuous
+    if (pos % 8 === 0) this.tone(36.7, 1.05, 'sine', 0.18);
+
+    // Kick — pitched sine drop (58→28 Hz) on beats 1 & 3
+    if (pos === 0 || pos === 8) this.tone(58, 0.22, 'sine', 0.40, 28);
+
+    // Snare — bandpass noise burst on beat 3
+    if (pos === 8) this.noise(0.10, 0.22, 4000, 'bandpass');
+
+    // Sub-bass accent hits — A0 (27.5) and C1 (32.7) for harmonic depth
+    //   pos:  0  1  2  3   4  5  6  7   8  9 10 11  12 13 14 15
+    const SUB = [0, 0, 0, 0,  0, 0, 27.5, 0,  0, 0, 0, 0,  0, 0, 32.7, 0];
+    if (SUB[pos]) this.tone(SUB[pos], 0.30, 'sine', 0.20);
+
+    // Bass melody — sawtooth, walking D-Phrygian line
+    const BASS = [73.4, 0, 77.8, 73.4,  65.4, 73.4, 0, 0,
+                  73.4, 77.8, 65.4, 0,   55.0, 0, 65.4, 73.4];
+    if (BASS[pos]) this.tone(BASS[pos], 0.15, 'sawtooth', 0.18);
+
+    // Bell melody — long-decay triangle for Buddhist singing-bowl feel
+    //   D4=293.7  A3=220  G3=196  Eb4=311.1  C4=261.6  Bb3=233.1  F3=174.6
+    const BELL = [293.7, 0, 0, 220.0,  196.0, 0, 311.1, 0,
+                  293.7, 0, 0, 261.6,  220.0, 233.1, 0, 196.0];
+    if (BELL[pos]) this.tone(BELL[pos], 0.60, 'triangle', 0.10);
+
+    // Harmony — modal 5ths & minor intervals (triangle), one per bar
+    const HARM = [110.0, 0, 0, 0,   98.0, 0, 0, 0,   116.5, 0, 0, 0,   130.8, 0, 0, 0];
+    if (HARM[pos]) this.tone(HARM[pos], 0.36, 'triangle', 0.06);
+
+    // Hi-hat — open on off-beats 4 & 12, closed shaker on 2 6 10 14
+    if (pos === 4 || pos === 12) this.noise(0.055, 0.11, 10000, 'highpass');
+    else if (pos % 4 === 2)      this.noise(0.028, 0.07,  9000, 'highpass');
+
+    // Alarm arp overlay at high intensity
+    if (this.intensity > 0 && pos % 4 === 2)
+      this.tone(BASS[pos] ? BASS[pos] * 2 : 146.8, 0.09, 'square', 0.045);
+
     this.step++;
   }
 }
