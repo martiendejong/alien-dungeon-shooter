@@ -537,8 +537,8 @@ export class Player {
     }
     this.col = useCol;
     const toX = this.cx(useCol);
-    // Drift: animate diagonally from original position; no drift: fall straight from column center
-    this.x = (useCol !== col) ? origX : toX;
+    // With any drift direction: always animate FROM the edge (origX), not from the gap column center
+    this.x = driftDir !== 0 ? origX : toX;
     const toY = this.cy(useLandRow);
     if (toY <= this.y) {
       // Landing Y is at or above current Y (hang position below floor level) — snap directly
