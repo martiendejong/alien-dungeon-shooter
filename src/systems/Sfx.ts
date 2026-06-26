@@ -60,13 +60,57 @@ class SfxEngine {
   win()         { this.stopMusic(); [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.22, 'triangle', 0.18, undefined, i * 0.12)); }
   lose()        { [330, 247, 165].forEach((f, i) => this.tone(f, 0.4, 'sawtooth', 0.2, undefined, i * 0.18)); this.noise(0.6, 0.2, 600); }
 
-  // ---- music: 16-step D-Phrygian dark-Buddhist groove — heavy sub, ~127 BPM ----
-  // Scale: D Eb F G A Bb C  (Phrygian — dark, Eastern, harmonically rich)
-  // Grid:  16th notes at 118 ms → quarter note 472 ms → 127 BPM
+  // ---- music: 96-phrase D-Phrygian dark-Buddhist composition (~3 min loop) -----
+  // Scale: D Eb F G A Bb C  (Phrygian — Eastern, dark, rich)
+  // Grid:  16th notes @ 118 ms → 127 BPM  |  96 phrases × 16 steps = 1536 steps ≈ 3:01
+  //
+  // Song arc:  Intro → A → A' → Bridge → Return → Return' → Climax → Outro
+  //            sparse   full   low-mel  bridge    richer    var     high    sparse
   private musicTimer = 0;
   private step = 0;
   private intensity = 0;
   private readonly BASE_MS = 118;
+  private readonly SONG_LEN = 1536; // 96 × 16 ≈ 181 s
+
+  // Bass line patterns (sawtooth) — D2=73.4 Eb2=77.8 F2=87.3 G2=98.0 A1=55.0 C2=65.4
+  private readonly BP = [
+    [73.4, 0, 77.8, 73.4, 65.4, 73.4, 0, 0, 73.4, 77.8, 65.4, 0, 55.0, 0, 65.4, 73.4],           // B0 main walk
+    [55.0, 0, 65.4, 0, 73.4, 0, 77.8, 0, 87.3, 77.8, 73.4, 65.4, 73.4, 0, 0, 0],                  // B1 bridge
+    [73.4, 77.8, 87.3, 77.8, 73.4, 65.4, 73.4, 77.8, 73.4, 0, 73.4, 0, 65.4, 73.4, 65.4, 55.0],  // B2 climax run
+    [73.4, 0, 0, 0, 0, 0, 55.0, 0, 73.4, 0, 0, 0, 65.4, 0, 73.4, 0],                              // B3 sparse
+  ];
+  // Melody patterns (triangle, long decay — singing-bowl quality)
+  // A3=220 G3=196 F3=174.6 Eb3=155.6 Bb3=233.1 C4=261.6 D4=293.7 Eb4=311.1 F4=349.2 D3=146.8
+  private readonly MP = [
+    [293.7, 0, 0, 220.0, 196.0, 0, 311.1, 0, 293.7, 0, 0, 261.6, 220.0, 233.1, 0, 196.0],          // M0 main
+    [220.0, 0, 196.0, 0, 174.6, 0, 0, 155.6, 196.0, 0, 220.0, 0, 233.1, 0, 0, 220.0],               // M1 low
+    [261.6, 0, 233.1, 0, 220.0, 0, 0, 196.0, 174.6, 0, 196.0, 220.0, 233.1, 220.0, 0, 196.0],       // M2 bridge
+    [293.7, 311.1, 0, 349.2, 311.1, 0, 293.7, 0, 261.6, 0, 0, 293.7, 311.1, 0, 349.2, 293.7],       // M3 climax high
+    [293.7, 0, 0, 0, 0, 0, 220.0, 0, 0, 0, 0, 0, 196.0, 0, 0, 293.7],                               // M4 sparse
+  ];
+  // Harmony patterns (triangle, mid-range) — A2=110 G2=98 Bb2=116.5 C3=130.8 F2=87.3 D3=146.8 Eb3=155.6
+  private readonly HP = [
+    [110.0, 0, 0, 0, 98.0, 0, 0, 0, 116.5, 0, 0, 0, 130.8, 0, 0, 0],                               // H0 modal 5ths
+    [110.0, 0, 98.0, 0, 87.3, 0, 98.0, 0, 110.0, 0, 116.5, 0, 130.8, 0, 110.0, 0],                 // H1 rich
+    [146.8, 0, 0, 0, 130.8, 0, 0, 0, 116.5, 0, 0, 0, 110.0, 0, 0, 0],                              // H2 bridge descend
+    [110.0, 155.6, 0, 0, 98.0, 0, 116.5, 0, 110.0, 0, 146.8, 0, 155.6, 0, 130.8, 110.0],           // H3 tense climax
+  ];
+  // Sub-bass accent (sine) — A0=27.5 C1=32.7 — steady regardless of section
+  private readonly SUB = [0,0,0,0, 0,0,27.5,0, 0,0,0,0, 0,0,32.7,0];
+
+  // Song sections — 8 × 12 phrases = 96 phrases; find by last sc where phrase >= sc.start
+  // b=bass, m=melody, h=harmony, drums=kick+snare+hat
+  private readonly SECTS = [
+    { start:  0, b: 3, m: 4, h: 0, drums: false }, // intro    — drone + sparse bell
+    { start: 12, b: 0, m: 0, h: 0, drums: true  }, // A        — main theme, full groove
+    { start: 24, b: 0, m: 1, h: 0, drums: true  }, // A'       — low melody variation
+    { start: 36, b: 1, m: 2, h: 2, drums: true  }, // Bridge   — different bass + bridge mel
+    { start: 48, b: 0, m: 0, h: 1, drums: true  }, // Return   — main theme, richer harmony
+    { start: 60, b: 0, m: 1, h: 1, drums: true  }, // Return'  — low mel + rich harm
+    { start: 72, b: 2, m: 3, h: 3, drums: true  }, // Climax   — running bass, high mel, tension
+    { start: 84, b: 3, m: 4, h: 0, drums: false }, // Outro    — mirrors intro, wind down
+  ];
+
   startMusic() {
     this.ensure(); if (!this.ctx || this.musicTimer) return;
     this.musicTimer = window.setInterval(() => this.musicStep(), this.BASE_MS - Math.round(this.intensity * 18));
@@ -79,44 +123,39 @@ class SfxEngine {
   }
   private musicStep() {
     if (this.muted || !this.ctx) return;
-    const pos = this.step % 16;
+    const s   = this.step % this.SONG_LEN;
+    const pos = s % 16;
+    const phrase = Math.floor(s / 16);
 
-    // Drone — D1 (36.7 Hz) sustained sine, re-triggered every 8 steps to keep rumble continuous
+    // Find current section (last entry whose start ≤ phrase)
+    let sect = this.SECTS[0];
+    for (const sc of this.SECTS) if (phrase >= sc.start) sect = sc;
+
+    // Drone — D1 sustained sine, re-fired every 8 steps for continuous rumble
     if (pos % 8 === 0) this.tone(36.7, 1.05, 'sine', 0.18);
 
-    // Kick — pitched sine drop (58→28 Hz) on beats 1 & 3
-    if (pos === 0 || pos === 8) this.tone(58, 0.22, 'sine', 0.40, 28);
+    if (sect.drums) {
+      if (pos === 0 || pos === 8) this.tone(58, 0.22, 'sine', 0.40, 28); // kick
+      if (pos === 8)              this.noise(0.10, 0.22, 4000, 'bandpass'); // snare
+      if (pos === 4 || pos === 12) this.noise(0.055, 0.11, 10000, 'highpass'); // open hat
+      else if (pos % 4 === 2)     this.noise(0.028, 0.07,  9000, 'highpass'); // closed hat
+    }
 
-    // Snare — bandpass noise burst on beat 3
-    if (pos === 8) this.noise(0.10, 0.22, 4000, 'bandpass');
+    const sub = this.SUB[pos];
+    if (sub) this.tone(sub, 0.30, 'sine', 0.20);
 
-    // Sub-bass accent hits — A0 (27.5) and C1 (32.7) for harmonic depth
-    //   pos:  0  1  2  3   4  5  6  7   8  9 10 11  12 13 14 15
-    const SUB = [0, 0, 0, 0,  0, 0, 27.5, 0,  0, 0, 0, 0,  0, 0, 32.7, 0];
-    if (SUB[pos]) this.tone(SUB[pos], 0.30, 'sine', 0.20);
+    const b = this.BP[sect.b][pos];
+    if (b) this.tone(b, 0.15, 'sawtooth', 0.18);
 
-    // Bass melody — sawtooth, walking D-Phrygian line
-    const BASS = [73.4, 0, 77.8, 73.4,  65.4, 73.4, 0, 0,
-                  73.4, 77.8, 65.4, 0,   55.0, 0, 65.4, 73.4];
-    if (BASS[pos]) this.tone(BASS[pos], 0.15, 'sawtooth', 0.18);
+    const m = this.MP[sect.m][pos];
+    if (m) this.tone(m, 0.60, 'triangle', 0.10);
 
-    // Bell melody — long-decay triangle for Buddhist singing-bowl feel
-    //   D4=293.7  A3=220  G3=196  Eb4=311.1  C4=261.6  Bb3=233.1  F3=174.6
-    const BELL = [293.7, 0, 0, 220.0,  196.0, 0, 311.1, 0,
-                  293.7, 0, 0, 261.6,  220.0, 233.1, 0, 196.0];
-    if (BELL[pos]) this.tone(BELL[pos], 0.60, 'triangle', 0.10);
-
-    // Harmony — modal 5ths & minor intervals (triangle), one per bar
-    const HARM = [110.0, 0, 0, 0,   98.0, 0, 0, 0,   116.5, 0, 0, 0,   130.8, 0, 0, 0];
-    if (HARM[pos]) this.tone(HARM[pos], 0.36, 'triangle', 0.06);
-
-    // Hi-hat — open on off-beats 4 & 12, closed shaker on 2 6 10 14
-    if (pos === 4 || pos === 12) this.noise(0.055, 0.11, 10000, 'highpass');
-    else if (pos % 4 === 2)      this.noise(0.028, 0.07,  9000, 'highpass');
+    const h = this.HP[sect.h][pos];
+    if (h) this.tone(h, 0.36, 'triangle', 0.06);
 
     // Alarm arp overlay at high intensity
     if (this.intensity > 0 && pos % 4 === 2)
-      this.tone(BASS[pos] ? BASS[pos] * 2 : 146.8, 0.09, 'square', 0.045);
+      this.tone(b ? b * 2 : 146.8, 0.09, 'square', 0.045);
 
     this.step++;
   }

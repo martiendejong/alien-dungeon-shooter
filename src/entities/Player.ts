@@ -181,7 +181,7 @@ export class Player {
       else if (input.downPressed) {
         if (this.grabRow < this.row) {
           // Jumped up to grab a ledge above → return to the floor we jumped from
-          this.beginFall(this.hangDropCol, this.row, 0, false);
+          this.beginFall(this.hangDropCol, this.row, 0, true);
         } else if (this.hangFromFall) {
           // Fall-drift hang → Down continues the diagonal fall with same drift direction
           this.hangFromFall = false;
@@ -546,7 +546,7 @@ export class Player {
     }
     const dur = Math.max(140, Math.abs(toY - this.y) * M.fallPxPerMs);
     this.start({ type: 'fall', dur, toX, toY, arc: false, peak: 0, strides: 0,
-      toCol: useCol, toRow: useLandRow, onDone: () => { this.applyFallDamage(useLandRow); this.land(useCol, useLandRow); } });
+      toCol: useCol, toRow: useLandRow, onDone: () => { if (!fromHang) this.applyFallDamage(useLandRow); this.land(useCol, useLandRow); } });
   }
 
   /** Climb DOWN over a ledge edge: first lower yourself to HANG on the edge (back to the gap).
