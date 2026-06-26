@@ -58,6 +58,7 @@ export class Player {
   private hangDriftDir: 0 | 1 | -1 = 0; // saved drift direction for chained diagonal drops
   private bob = 0;
   private climbTopY = 0; private climbBottomY = 0; private fallStartY = 0;
+  private fallFromRun = false; // run-off ledge → show run anim briefly at fall start
   private onLadderStop = false; // arrived on a ladder via run/step → stay until key released
   armed = true;                 // when false (start of L1) no gun is drawn until you pick one up
   private coleSheet = false;    // using the real player sprite sheet (feet-aligned)
@@ -421,6 +422,7 @@ export class Player {
   }
 
   private beginFall(col: number, startRow: number, driftDir: 0 | 1 | -1 = 0, fromHang = false) {
+    this.fallFromRun = driftDir !== 0 && (this.state === 'run' || this.state === 'dash');
     const origX = this.x; // preserve for diagonal animation start point
     this.col = col; this.fallStartY = this.y;
     const landRow = this.grid.floorBelow(col, startRow);
@@ -648,7 +650,10 @@ export class Player {
         case 'jumpUp': case 'jumpFwd': animKey = 'cole_jump'; break;
         case 'climb': if (this.coleSheet3) { animKey = 'cole_climbladder'; scale = Player.SCALE3; } else animKey = 'cole_walk'; break;
         case 'climbUp': if (this.coleSheet2) { animKey = 'cole_mantle'; scale = Player.SCALE2; } else animKey = 'cole_jump'; break;
-        case 'fall': frameName = 'jump5'; break;
+        case 'fall':
+          if (this.fallFromRun && this.act && (this.scene.time.now - this.act.start) < 220) animKey = 'cole_run';
+          else frameName = 'jump5';
+          break;
         case 'hang': if (this.coleSheet2) { frameTex = 'cole_sheet2'; frameName = 'hang1'; scale = Player.SCALE2; } else frameName = 'jump2'; break;
         case 'cover': frameName = 'crouch0'; break;
         case 'turn': frameName = 'idle0'; break;
