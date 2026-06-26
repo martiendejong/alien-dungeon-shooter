@@ -330,19 +330,23 @@ export class Player {
     const isEdge = !this.grid.isSolid(blockedCol, this.row); // nothing to stand on → a gap/edge
     if (clear === 0 && !isEdge) { this.state = 'idle'; this.runDist = 0; return; } // wall right ahead → refuse
     const destCol = this.col + dir * clear;
-    const dur = M.runMs * Math.max(0.25, clear / M.runBlocks);
     const willFall = !onLadder && clear < M.runBlocks && isEdge;
+    // When running off an edge: extend animation one extra step past the platform into the gap,
+    // so the player visually "runs over the edge" rather than teleporting into the fall.
+    const runBlocks = willFall ? clear + 1 : clear;
+    const dur = M.runMs * Math.max(0.25, runBlocks / M.runBlocks);
+    const toX  = willFall ? this.cx(destCol + dir) : this.cx(destCol);
     this.runDist += clear; // accumulate the unbroken run length (for the 3-block run-jump rule)
-    this.start({ type: 'run', dur, toX: this.cx(destCol), toY: this.y, arc: false, peak: 0, strides: Math.max(1, clear),
+    this.start({ type: 'run', dur, toX, toY: this.y, arc: false, peak: 0, strides: Math.max(1, runBlocks),
       toCol: destCol, toRow: this.row, onDone: () => {
-        this.col = destCol; this.x = this.cx(destCol);
+        this.col = destCol;
+        if (!willFall) this.x = this.cx(destCol); // non-fall: snap to grid; fall: x stays at cx(destCol+dir)
         if (this.bufferedJump) {
           this.bufferedJump = false;
-          // a RUN-jump needs at least 3 blocks of run-up; too short → don't jump (keep running / run off the edge)
           if (this.bufferedJumpRun && this.runDist < 3) { if (willFall) this.beginFall(destCol + dir, this.row + 1, dir); else this.state = 'idle'; }
           else this.beginJumpFwd(this.bufferedJumpRun);
         }
-        else if (willFall) this.beginFall(destCol + dir, this.row + 1, dir); // ran off the edge
+        else if (willFall) this.beginFall(destCol + dir, this.row + 1, dir);
         else this.state = 'idle';
       } });
   }
