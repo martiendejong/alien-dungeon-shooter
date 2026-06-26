@@ -57,6 +57,8 @@ export class BootScene extends Phaser.Scene {
     this.load.image(COLE_SHEET3, COLE_SHEET3_FILE);
     if (this.textures.exists('gun')) this.textures.remove('gun');
     this.load.image('gun', 'assets/tiles/gun.png');
+    if (this.textures.exists('exit')) this.textures.remove('exit');
+    this.load.image('exit', 'assets/tiles/elevatordoor.png');
     this.load.image('alien_run', 'assets/tiles/running alien.png');
     this.load.image('soldier_sheet', 'assets/tiles/soldier.png');
     this.load.image('soldier2_sheet', 'assets/tiles/soldier 2.png');

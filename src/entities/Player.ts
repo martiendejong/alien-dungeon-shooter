@@ -53,6 +53,9 @@ export class Player {
   private bufferedJumpRun = false;  // ...and it was during a RUN → big jump
   private runDist = 0;              // blocks covered in the CURRENT unbroken run (run-jump needs >= 3)
   private grabCol = 0; private grabRow = 0;
+  private hangDropCol = 0;    // column to fall through when dropping from hang
+  private hangFromFall = false; // hang was grabbed during a drift-fall → Down lands on current row
+  private hangDriftDir: 0 | 1 | -1 = 0; // saved drift direction for chained diagonal drops
   private bob = 0;
   private climbTopY = 0; private climbBottomY = 0; private fallStartY = 0;
   private onLadderStop = false; // arrived on a ladder via run/step → stay until key released
@@ -90,6 +93,11 @@ export class Player {
   private get busy() { return !!this.act; }
 
   getBounds(): Phaser.Geom.Rectangle {
+    if (this.state === 'hang') {
+      // hands grip ledge top; head/shoulders extend above — shift hitbox up so enemies can hit
+      const top = this.y - this.halfH * 3;
+      return new Phaser.Geom.Rectangle(this.x - this.halfW, top, this.halfW * 2, this.halfH * 2);
+    }
     return new Phaser.Geom.Rectangle(this.x - this.halfW, this.y - this.halfH, this.halfW * 2, this.halfH * 2);
   }
   getMuzzle(): { x: number; y: number } {
@@ -123,7 +131,7 @@ export class Player {
     if (this.grid.isSolid(curCol, feetRow) || this.grid.isLadder(curCol, feetRow)) {
       this.y = this.cy(feetRow); this.state = 'idle';   // grounded → just stop
     } else {
-      this.beginFall(curCol, false);                    // airborne/hanging → drop straight down
+      this.beginFall(curCol, this.row + 1);              // airborne/hanging → drop straight down
     }
   }
   private die() {
@@ -170,7 +178,24 @@ export class Player {
     if (this.state === 'cover') { this.updateCover(time, input, q); return; }
     if (this.state === 'hang') {
       if (input.upHeld) this.beginClimbUp();
-      else if (input.downPressed) this.beginFall(this.col, true); // a SECOND down press drops you off the ledge
+      else if (input.downPressed) {
+        if (this.grabRow < this.row) {
+          // Jumped up to grab a ledge above → return to the floor we jumped from
+          this.beginFall(this.hangDropCol, this.row, 0, false);
+        } else if (this.hangFromFall) {
+          // Fall-drift hang → Down continues the diagonal fall with same drift direction
+          this.hangFromFall = false;
+          this.beginFall(this.hangDropCol, this.row, this.hangDriftDir, true);
+        } else {
+          // Climbed down / forward-jump hang → find nearest floor, prefer own column
+          let dropCol = this.hangDropCol;
+          const f1 = this.grid.floorBelow(dropCol, this.row + 1);
+          const gc = dropCol - (this.facing as number); // gap direction
+          const f2 = this.grid.floorBelow(gc, this.row + 1);
+          if (f2 >= 0 && (f1 < 0 || f2 < f1)) dropCol = gc;
+          this.beginFall(dropCol, this.row + 1, 0, true);
+        }
+      }
       return;
     }
 
@@ -313,10 +338,10 @@ export class Player {
         if (this.bufferedJump) {
           this.bufferedJump = false;
           // a RUN-jump needs at least 3 blocks of run-up; too short → don't jump (keep running / run off the edge)
-          if (this.bufferedJumpRun && this.runDist < 3) { if (willFall) this.beginFall(destCol + dir, false); else this.state = 'idle'; }
+          if (this.bufferedJumpRun && this.runDist < 3) { if (willFall) this.beginFall(destCol + dir, this.row + 1, dir); else this.state = 'idle'; }
           else this.beginJumpFwd(this.bufferedJumpRun);
         }
-        else if (willFall) this.beginFall(destCol + dir, false); // ran off the edge
+        else if (willFall) this.beginFall(destCol + dir, this.row + 1, dir); // ran off the edge
         else this.state = 'idle';
       } });
   }
@@ -349,6 +374,8 @@ export class Player {
       const hangX = this.cx(gc) - this.facing * this.block * 0.5; // gap side = -facing
       const hangY = gr * this.block + this.halfH;
       this.grabCol = gc; this.grabRow = gr; // keep facing the same (back to the gap)
+      this.hangDropCol = this.col; // drop back to original column (this.col not changed by jumpUp onDone)
+      this.hangFromFall = false;
       this.start({ type: 'jumpUp', dur: M.jumpUpMs * 0.5, toX: hangX, toY: hangY, arc: false, peak: 0, strides: 0,
         toCol: gc, toRow: gr, onDone: () => { this.state = 'hang'; } });
     } else { // no ledge: hop up and fall back, clamped so we don't pop through the ceiling
@@ -380,29 +407,146 @@ export class Player {
       // landed one block short of a ledge → grab its edge and hang (e.g. a 6-wide gap)
       const gc = dest + s, hangX = this.cx(dest), hangY = this.row * this.block + this.halfH;
       this.grabCol = gc; this.grabRow = this.row;
+      this.hangDropCol = gc; // use ledge column for floor search (finds floor just below the ledge)
+      this.hangFromFall = false;
       // hang at `dest` (the cell you grabbed from) so pressing DOWN drops you STRAIGHT down here,
       // not back at the take-off column; pressing UP still climbs onto the grabbed ledge `gc`.
       this.start({ type: 'jumpFwd', dur, toX: hangX, toY: hangY, arc: true, peak, strides: 0,
         toCol: gc, toRow: this.row, onDone: () => { this.col = dest; this.x = hangX; this.state = 'hang'; } });
     } else {
-      // no floor within reach → arc out and fall
+      // no floor within reach → arc out and fall (drift carries horizontal momentum)
       this.start({ type: 'jumpFwd', dur: dur * 0.8, toX: this.cx(dest), toY: this.y - this.block * 0.5, arc: true, peak, strides: 0,
-        toCol: dest, toRow: this.row, onDone: () => this.beginFall(dest, false) });
+        toCol: dest, toRow: this.row, onDone: () => this.beginFall(dest, this.row + 1, s) });
     }
   }
 
-  private beginFall(col: number, fromHang: boolean) {
-    this.col = col; this.x = this.cx(col); this.fallStartY = this.y;
-    const landRow = this.grid.floorBelow(col, this.row + (fromHang ? 0 : 1));
+  private beginFall(col: number, startRow: number, driftDir: 0 | 1 | -1 = 0, fromHang = false) {
+    const origX = this.x; // preserve for diagonal animation start point
+    this.col = col; this.fallStartY = this.y;
+    const landRow = this.grid.floorBelow(col, startRow);
     if (landRow < 0) { // no floor at all → death (shouldn't happen with solid bedrock)
+      this.x = this.cx(col);
       this.start({ type: 'fall', dur: 600, toX: this.x, toY: this.grid.worldH + 80, arc: false, peak: 0, strides: 0,
         toCol: col, toRow: this.row, onDone: () => this.die() });
       return;
     }
-    const toY = this.cy(landRow);
+    // Count floor levels fallen (1 block drift per level)
+    let levelsDown = 0;
+    if (driftDir !== 0) {
+      let checkRow = startRow;
+      while (checkRow <= landRow) {
+        const f = this.grid.floorBelow(col, checkRow);
+        if (f < 0 || f > landRow) break;
+        levelsDown++;
+        checkRow = f + 1;
+      }
+    }
+    // Drift: 1 block per floor level in jump direction, stop at walls.
+    // Guard: nr > startRow ensures chained drops don't re-land on the current floor level.
+    let useCol = col, useLandRow = landRow;
+    if (driftDir !== 0 && levelsDown > 0) {
+      let dc = col, dr = landRow;
+      for (let i = 0; i < levelsDown; i++) {
+        const nc = dc + driftDir;
+        const nr = this.grid.floorBelow(nc, startRow);
+        if (nr >= 0 && nr > startRow && !this.grid.isSolid(nc, nr - 1) && !this.grid.isSolid(nc, nr - 2)) {
+          dc = nc; dr = nr;
+        } else break;
+      }
+      useCol = dc; useLandRow = dr;
+    }
+    // 1-block gap grab: if a platform sits exactly 1 block ahead at the same height, grab its near edge.
+    // (Running off a ledge with no gap — or a gap > 1 — falls straight through without auto-hang.)
+    if (driftDir !== 0) {
+      const overCol = col + driftDir;
+      const floorRow = startRow - 1;
+      if (floorRow >= 0 && this.grid.isStandFloor(overCol, floorRow) &&
+          !this.grid.isSolid(col, floorRow - 1) && !this.grid.isSolid(col, floorRow - 2)) {
+        const hangX = this.cx(overCol) - driftDir * this.block * 0.5;
+        const hangY = floorRow * this.block + this.halfH;
+        const fallToY = this.cy(floorRow);
+        this.grabCol = overCol; this.grabRow = floorRow;
+        this.hangDropCol = col;
+        this.hangFromFall = false;
+        this.hangDriftDir = 0;
+        this.col = col; this.x = origX;
+        const dur = Math.max(180, Math.abs(fallToY - this.y) * M.fallPxPerMs);
+        this.start({ type: 'fall', dur, toX: hangX, toY: fallToY, arc: false, peak: 0, strides: 0,
+          toCol: overCol, toRow: floorRow, onDone: () => {
+            this.col = col; this.x = hangX; this.row = floorRow;
+            this.y = hangY;
+            this.state = 'hang';
+          }});
+        return;
+      }
+    }
+    // Diagonal fall ledge scan: after drifting, grab the first reachable ledge below.
+    // Starts at startRow+1 so chained drops don't re-grab the floor they just hung from.
+    if (driftDir !== 0 && useCol !== col &&
+        !this.grid.isSolid(col, startRow - 1) &&
+        !this.grid.isSolid(col, startRow - 2)) {
+      const ledgeCol = useCol + driftDir;
+      for (let r = startRow + 1; r < useLandRow; r++) {
+        if (this.grid.isStandFloor(ledgeCol, r) && !this.grid.isSolid(useCol, r - 1)) {
+          const hangX = this.cx(ledgeCol) - driftDir * this.block * 0.5;
+          const hangY = r * this.block + this.halfH;
+          const fallToY = this.cy(r);
+          this.grabCol = ledgeCol; this.grabRow = r;
+          this.hangDropCol = useCol;
+          this.hangFromFall = true;
+          this.hangDriftDir = driftDir;
+          this.col = col; this.x = origX;
+          const dur = Math.max(220, Math.abs(fallToY - this.y) * M.fallPxPerMs);
+          this.start({ type: 'fall', dur, toX: hangX, toY: fallToY, arc: false, peak: 0, strides: 0,
+            toCol: ledgeCol, toRow: r, onDone: () => {
+              this.col = useCol; this.x = hangX; this.row = r;
+              this.y = hangY;
+              this.state = 'hang';
+            }});
+          return;
+        }
+      }
+    }
+    // Straight-fall PoP ledge scan (fromHang only): grab the first adjacent ledge while
+    // falling straight down, checking the facing side first (the wall just hung from).
+    if (fromHang && driftDir === 0) {
+      for (const adj of [this.facing, -(this.facing) as 1 | -1]) {
+        const adjCol = col + adj;
+        for (let r = startRow + 1; r < landRow; r++) {
+          if (this.grid.isStandFloor(adjCol, r) && !this.grid.isSolid(col, r - 1)) {
+            const hangX = this.cx(adjCol) - (adj as number) * this.block * 0.5;
+            const hangY = r * this.block + this.halfH;
+            const fallToY = this.cy(r);
+            this.grabCol = adjCol; this.grabRow = r;
+            this.hangDropCol = col;
+            this.hangFromFall = true;
+            this.hangDriftDir = 0;
+            const dur = Math.max(220, Math.abs(fallToY - this.y) * M.fallPxPerMs);
+            this.start({ type: 'fall', dur, toX: hangX, toY: fallToY, arc: false, peak: 0, strides: 0,
+              toCol: adjCol, toRow: r, onDone: () => {
+                this.col = col; this.x = hangX; this.row = r;
+                this.y = hangY;
+                this.state = 'hang';
+              }});
+            return;
+          }
+        }
+      }
+    }
+    this.col = useCol;
+    const toX = this.cx(useCol);
+    // Drift: animate diagonally from original position; no drift: fall straight from column center
+    this.x = (useCol !== col) ? origX : toX;
+    const toY = this.cy(useLandRow);
+    if (toY <= this.y) {
+      // Landing Y is at or above current Y (hang position below floor level) — snap directly
+      this.x = toX;
+      this.land(useCol, useLandRow);
+      return;
+    }
     const dur = Math.max(140, Math.abs(toY - this.y) * M.fallPxPerMs);
-    this.start({ type: 'fall', dur, toX: this.x, toY, arc: false, peak: 0, strides: 0,
-      toCol: col, toRow: landRow, onDone: () => { this.applyFallDamage(landRow); this.land(col, landRow); } });
+    this.start({ type: 'fall', dur, toX, toY, arc: false, peak: 0, strides: 0,
+      toCol: useCol, toRow: useLandRow, onDone: () => { this.applyFallDamage(useLandRow); this.land(useCol, useLandRow); } });
   }
 
   /** Climb DOWN over a ledge edge: first lower yourself to HANG on the edge (back to the gap).
@@ -415,17 +559,24 @@ export class Player {
     if (this.grid.isSolid(gapCol, this.row)) return false;       // wall/floor behind → not a drop edge
     if (this.grid.floorBelow(gapCol, this.row) < 0) return false; // nothing below the gap → don't climb into the void
     this.grabCol = this.col; this.grabRow = this.row;            // up = climb back to where we stood
+    this.hangDropCol = this.col;                                 // drop through own column; Down handler picks closer floor
+    this.hangFromFall = false;
+    this.hangDriftDir = 0;
     const hangX = this.cx(this.col) - this.facing * this.block * 0.5; // hang on the gap-side face
     const hangY = this.row * this.block + this.halfH;
     this.start({ type: 'climbUp', dur: M.climbUpMs, toX: hangX, toY: hangY, arc: false, peak: 0, strides: 0,
-      toCol: gapCol, toRow: this.row, onDone: () => { this.col = gapCol; this.x = hangX; this.state = 'hang'; } });
+      toCol: this.col, toRow: this.row, onDone: () => { this.x = hangX; this.state = 'hang'; } });
     return true;
   }
 
   private beginClimbUp() {
+    this.hangFromFall = false; this.hangDriftDir = 0;
     const c = this.grabCol, r = this.grabRow;
     this.start({ type: 'climbUp', dur: M.climbUpMs, toX: this.cx(c), toY: this.cy(r), arc: false, peak: 0, strides: 0,
-      toCol: c, toRow: r, onDone: () => this.land(c, r) });
+      toCol: c, toRow: r, onDone: () => {
+        this.land(c, r);
+        this.scene.events.emit('player-climbed', c, r); // notify GameScene: collapse loose tile immediately
+      } });
   }
 
   private beginMelee(time: number) {
@@ -526,6 +677,18 @@ export class Player {
     this.gun.setVisible(showGun);
     const gs = this.gunScale;
     this.gun.setPosition(this.x + this.facing * 3, bobY - 14).setRotation(this.aimAngle).setScale(gs, this.facing < 0 ? -gs : gs);
+  }
+
+  /** A loose tile crumbled under the player's feet — drop through immediately. */
+  tileCollapsed(col: number, row: number) {
+    const physCol = Math.floor(this.x / this.block);
+    const grounded = this.state === 'idle' || this.state === 'run' || this.state === 'step' ||
+                     this.state === 'dash' || this.state === 'turn' || this.state === 'melee';
+    if (grounded && this.row === row && physCol === col) {
+      this.act = undefined; this.bufferedJump = false;
+      this.col = col; this.x = this.cx(col);
+      this.beginFall(col, row + 1);
+    }
   }
 
   destroy() { this.vis?.destroy(); this.gun?.destroy(); }

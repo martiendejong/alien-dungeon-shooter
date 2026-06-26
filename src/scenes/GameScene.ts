@@ -147,6 +147,11 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
 
     this.hud.objective = this.level.objective;
     this.events.on('player-melee', () => this.meleeHits.clear());
+    this.events.on('player-climbed', (col: number, row: number) => {
+      // Player climbed UP onto this tile: collapse it immediately (no shake delay)
+      const lt = this.looseTiles.find(t => t.col === col && t.row === row && !t.falling);
+      if (lt && lt.fallAt === 0) lt.fallAt = this.time.now + 1; // fire next update tick
+    });
     this.events.on('enemy-died', (en: Enemy) => {
       Sfx.enemyDeath();
       this.deathBurst(en.x, en.y, en.isBoss);
@@ -195,14 +200,17 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       g.fillStyle(0xffcf3a, 1).fillRect(5, b - 8, b - 10, 4);                  // glowing button top
       g.generateTexture('plate', b, b); g.destroy();
     }
-    if (!this.textures.exists('tile_loose')) {
-      const b = this.block, g = this.add.graphics();
-      g.fillStyle(0x6a5a48, 1).fillRect(0, 0, b, b);                      // cracked sandstone slab
-      g.fillStyle(0x7e6c54, 1).fillRect(0, 0, b, 4);
-      g.lineStyle(2, 0x3a2f22, 1);                                        // crack lines
-      g.lineBetween(6, 2, 12, b - 4).lineBetween(b - 8, 3, b - 14, b - 5).lineBetween(2, b / 2, b - 2, b / 2 + 4);
-      g.lineStyle(1, 0x241c14, 1).strokeRect(0, 0, b, b);
-      g.generateTexture('tile_loose', b, b); g.destroy();
+    // Regenerate every scene create so visual tweaks take effect without a hard reload.
+    if (this.textures.exists('tile_loose')) this.textures.remove('tile_loose');
+    {
+      const b = this.block, h = 18, g = this.add.graphics(); // h = PLAT_LIP — matches regular thin-slab thickness
+      g.fillStyle(0x5d5d54, 1).fillRect(0, 0, b, h);     // stone body
+      g.fillStyle(0x7c7c6e, 1).fillRect(0, 0, b, 6);     // lit top band
+      g.fillStyle(0xa2a28c, 1).fillRect(0, 0, b, 2);     // bright walking edge
+      g.fillStyle(0x4c4c45, 1); for (let x = 0; x < b; x += 16) g.fillRect(x, 6, 1, 7); // block joints
+      g.fillStyle(0x383832, 1).fillRect(0, 13, b, 5);    // shadow underside
+      g.fillStyle(0x24241f, 1).fillRect(0, 16, b, 2);    // dark drop edge
+      g.generateTexture('tile_loose', b, h); g.destroy();
     }
     if (!this.textures.exists('plate_dn')) {
       const b = this.block, g = this.add.graphics();
@@ -230,7 +238,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     }
     for (const k of this.looseCells) {
       const col = k % this.grid.cols, row = Math.floor(k / this.grid.cols);
-      const img = this.add.image(col * b, row * b, 'tile_loose').setOrigin(0, 0).setDepth(22).setDisplaySize(b, b);
+      const img = this.add.image(col * b, row * b, 'tile_loose').setOrigin(0, 0).setDepth(22);
       this.looseTiles.push({ col, row, img, fallAt: 0, falling: false });
     }
   }
@@ -376,7 +384,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
           this.pickups.push({ img, kind, weaponKey: wkey });
         } else if (ch === 'E') {
           this.exitX = col * b + b / 2; this.exitY = floorRow * b - 36;
-          this.add.image(this.exitX, this.exitY, 'exit').setDepth(25);
+          this.add.image(this.exitX, this.exitY, 'exit').setDisplaySize(64, 64).setDepth(25);
         } else if (kindOf[ch]) {
           this.spawnEnemy(kindOf[ch], col, floorRow);
         }
@@ -580,11 +588,11 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
 
     this._player.tick(time, delta, this.input2, this);
     if (this._player.alive) {
-      this.weapons.update(time, this.input2, this._player);
+      const st = this._player.state;
+      if (st !== 'hang' && st !== 'climbUp' && st !== 'climb') this.weapons.update(time, this.input2, this._player);
       this.handleGrenade(time);
       this.handleMelee();
       this.handlePlayerHits(time);
-      const st = this._player.state;
       if (this.grid.isSpike(this._player.col, this._player.row) && (st === 'idle' || st === 'step' || st === 'run' || st === 'melee')) {
         this.flashMessage('IMPALED ON THE SPIKES'); this._player.takeDamage(999, true);
       }
@@ -678,21 +686,30 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       if (dest >= 0) this._player.revive(g.col + dir, dest);
     }
   }
-  /** Loose tiles: when you stand on one it shakes for ~0.4s, then drops away and you fall through. */
+  /** Loose tiles: dip on first step, rattle, then crumble — player falls with them. */
   private updateLooseTiles(time: number) {
     const p = this._player; const b = this.block;
-    // grounded states only — don't crumble a tile you're jumping/falling past. Use the player's PHYSICAL
-    // x to find the column it's actually over, so running across a tile (whose logical col lags) still arms it.
     const grounded = !!p && (p.state === 'idle' || p.state === 'run' || p.state === 'step' || p.state === 'dash' || p.state === 'turn' || p.state === 'melee');
     const pcol = p ? Math.floor(p.x / b) : -1;
     for (const t of this.looseTiles) {
       if (t.falling) continue;
       const onIt = !!p && p.alive && grounded && pcol === t.col && p.row === t.row;
-      if (onIt && t.fallAt === 0) t.fallAt = time + 320;           // armed — start the timer
-      if (t.fallAt > 0 && time < t.fallAt) { t.img.x = t.col * b + (Math.floor(time / 45) % 2 ? 1.5 : -1.5); } // shake
-      else if (t.fallAt > 0 && time >= t.fallAt) {                 // crumble: open the cell and drop the tile
-        t.falling = true; t.img.x = t.col * b;
+      if (onIt && t.fallAt === 0) t.fallAt = time + 400;
+      if (t.fallAt > 0 && time < t.fallAt) {
+        const elapsed = time - (t.fallAt - 400);
+        if (elapsed < 160) {
+          // PoP-style dip: tile sinks under the player's weight, bounces back
+          t.img.y = t.row * b + Math.sin(elapsed / 160 * Math.PI) * 4;
+          t.img.x = t.col * b;
+        } else {
+          // rattle phase: rapid shake before collapse
+          t.img.x = t.col * b + (Math.floor(time / 45) % 2 ? 2 : -2);
+          t.img.y = t.row * b + (Math.floor(time / 65) % 2 ? 1 : 0);
+        }
+      } else if (t.fallAt > 0 && time >= t.fallAt) {
+        t.falling = true; t.img.x = t.col * b; t.img.y = t.row * b;
         this.grid.setOpen(t.col, t.row, true);
+        if (p?.alive) p.tileCollapsed(t.col, t.row);
         Sfx.land();
         this.tweens.add({ targets: t.img, y: t.img.y + b * 4, alpha: 0, angle: 40, duration: 600, onComplete: () => t.img.destroy() });
       }

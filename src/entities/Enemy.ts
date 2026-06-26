@@ -135,10 +135,24 @@ export class Enemy extends Phaser.GameObjects.Sprite {
       default: // ranged
         if (time < this.alertUntil) {                       // alerted by a shot: hold position, face the player
           this.facing = p.x < this.x ? -1 : 1;
-          if (sees) this.aimAndFire(time, p);               // fire if it can actually see you; otherwise just stand guard
-          else this.fireState = 'patrol';
-        } else if (sees && (p.x < this.x ? -1 : 1) === this.facing) this.aimAndFire(time, p);
-        else { this.fireState = 'patrol'; this.patrol(false); }
+          if (sees) {
+            this.aimAndFire(time, p);
+          } else if (this.fireState !== 'patrol' && this.fireState !== 'reload') {
+            const prev = this.fireState;
+            this.aimAndFire(time, p);
+            if (this.fireState !== prev) this.fireState = 'patrol'; // shot fired → stop
+          } else {
+            this.fireState = 'patrol';
+          }
+        } else if (sees && (p.x < this.x ? -1 : 1) === this.facing) {
+          this.aimAndFire(time, p);
+        } else if (!sees && this.fireState !== 'patrol' && this.fireState !== 'reload') {
+          const prev = this.fireState;
+          this.aimAndFire(time, p);
+          if (this.fireState !== prev) { this.fireState = 'patrol'; this.patrol(false); } // shot fired → resume walk
+        } else {
+          this.fireState = 'patrol'; this.patrol(false);
+        }
     }
     this.setFlipX(this.facing < 0);
     this.anim(this.moving);

@@ -1,84 +1,81 @@
 import Phaser from 'phaser';
 import type { GameScene } from './GameScene';
+import { ImUI } from '../ui/ImUI';
 
 export class HUDScene extends Phaser.Scene {
   private gs!: GameScene;
-  private g!: Phaser.GameObjects.Graphics;
-  private hearts: Phaser.GameObjects.Image[] = [];
-  private weaponText!: Phaser.GameObjects.Text;
-  private modeText!: Phaser.GameObjects.Text;
-  private nadeText!: Phaser.GameObjects.Text;
-  private objText!: Phaser.GameObjects.Text;
-  private msgText!: Phaser.GameObjects.Text;
-  private bossText!: Phaser.GameObjects.Text;
-  private escapeText!: Phaser.GameObjects.Text;
+  private ui!: ImUI;
 
   constructor() { super('HUDScene'); }
 
   create() {
     this.gs = this.scene.get('GameScene') as GameScene;
-    this.g = this.add.graphics();
-    const font = 'Consolas, monospace';
-
-    const maxHearts = Math.max(1, this.gs.hud?.maxHp ?? 3);
-    this.hearts = [];
-    for (let i = 0; i < maxHearts; i++)
-      this.hearts.push(this.add.image(36 + i * 30, 36, 'heart_full').setScrollFactor(0));
-
-    this.weaponText = this.add.text(28, 64, '', { fontFamily: font, fontSize: '18px', color: '#9fe8ff' });
-    this.modeText = this.add.text(28, 88, '', { fontFamily: font, fontSize: '14px', color: '#e8a13a' });
-    this.nadeText = this.add.text(28, 110, '', { fontFamily: font, fontSize: '14px', color: '#cfe0a0' });
-    this.objText = this.add.text(this.scale.width / 2, 18, '', { fontFamily: font, fontSize: '14px', color: '#8090a4' }).setOrigin(0.5, 0);
-    this.bossText = this.add.text(this.scale.width / 2, 44, '', { fontFamily: font, fontSize: '14px', color: '#ff6a5a' }).setOrigin(0.5, 0);
-    this.escapeText = this.add.text(this.scale.width - 28, 60, '', { fontFamily: font, fontSize: '20px', color: '#ffd23a', fontStyle: 'bold' }).setOrigin(1, 0);
-    this.msgText = this.add.text(this.scale.width / 2, this.scale.height * 0.32, '', {
-      fontFamily: 'Segoe UI, sans-serif', fontSize: '30px', color: '#e8e0c0', fontStyle: 'bold',
-    }).setOrigin(0.5).setShadow(0, 2, '#000', 6);
+    this.ui = new ImUI(this, 100);
   }
 
   update() {
     const h = this.gs?.hud;
     if (!h) return;
-    const g = this.g;
-    g.clear();
+    const { ui } = this;
+    const W = this.scale.width, H = this.scale.height;
+    const now = this.time.now;
 
-    // hearts (whole units)
-    for (let i = 0; i < this.hearts.length; i++)
-      this.hearts[i].setTexture(h.hp >= i + 1 ? 'heart_full' : 'heart_empty');
+    ui.startFrame();
 
-    this.weaponText.setText(`${h.weapon}  ${h.ammo}`);
-    this.modeText.setText(`[${h.mode}]  Shift toggles`);
-    this.nadeText.setText(`GRENADES x${h.grenades}   (G)`);
-    this.objText.setText(h.objective);
+    // top-left: HP + weapon stats
+    ui.col({ x: 28, y: 28, gap: 8 });
+      ui.row({ gap: 2 });
+        for (let i = 0; i < h.maxHp; i++)
+          ui.img(h.hp >= i + 1 ? 'heart_full' : 'heart_empty', 28, 28);
+      ui.end();
+      ui.text(`${h.weapon}  ${h.ammo}`, { fontSize: 18, color: '#9fe8ff' });
+      ui.text(`[${h.mode}]  Shift toggles`, { fontSize: 14, color: '#e8a13a' });
+      ui.text(`GRENADES x${h.grenades}   (G)`, { fontSize: 14, color: '#cfe0a0' });
+    ui.end();
 
-    // boss bar
+    // top-center: objective
+    ui.text(h.objective, { x: W / 2, y: 18, fontSize: 14, color: '#8090a4', originX: 0.5 });
+
+    // boss bar (only when boss is alive and on-screen)
     if (h.bossActive) {
-      const bw = 420, bh = 14, bx = this.scale.width / 2 - bw / 2, by = 66;
-      g.fillStyle(0x10151f, 0.85).fillRect(bx - 3, by - 3, bw + 6, bh + 6);
-      g.fillStyle(0x3a2330, 1).fillRect(bx, by, bw, bh);
-      g.fillStyle(0xc0392b, 1).fillRect(bx, by, bw * Phaser.Math.Clamp(h.bossHp / h.bossMax, 0, 1), bh);
-      this.bossText.setText(h.bossName);
-    } else this.bossText.setText('');
+      const bw = 420, bh = 14;
+      ui.text(h.bossName, { x: W / 2, y: 44, fontSize: 14, color: '#ff6a5a', originX: 0.5 });
+      ui.progressBar(W / 2 - bw / 2, 66, bw, bh, h.bossHp / h.bossMax, 0x3a2330, 0xc0392b);
+    }
 
-    // escape countdown
+    // top-right: escape countdown
     if (h.escapeLeft >= 0) {
       const danger = h.escapeLeft <= 15;
-      this.escapeText.setText(`ESCAPE  ${h.escapeLeft}s`)
-        .setColor(danger ? '#ff4030' : '#ffd23a')
-        .setScale(danger ? 1.25 + 0.12 * Math.sin(this.time.now * 0.02) : 1);
-    } else this.escapeText.setText('');
+      const scale = danger ? 1.25 + 0.12 * Math.sin(now * 0.02) : 1;
+      ui.text(`ESCAPE  ${h.escapeLeft}s`, {
+        x: W - 28, y: 60,
+        fontSize: 20, color: danger ? '#ff4030' : '#ffd23a', bold: true,
+        originX: 1, scaleX: scale, scaleY: scale,
+      });
+    }
 
-    // danger vignette — pulses red on ALARM, throbs like a heartbeat at 1 heart
-    const now = this.time.now, W = this.scale.width, H = this.scale.height;
+    // center: flash message
+    if (h.message) {
+      ui.text(h.message, {
+        x: W / 2, y: H * 0.32,
+        fontFamily: 'Segoe UI, sans-serif',
+        fontSize: 30, color: '#e8e0c0', bold: true, shadow: true,
+        originX: 0.5, originY: 0.5,
+      });
+    }
+
+    // danger vignette — pulses red on ALARM, heartbeat at 1 HP
     let edge = 0;
     if (h.alarm) edge = 0.16 + 0.10 * Math.sin(now * 0.011);
     if (h.hp <= 1) edge = Math.max(edge, 0.30 + 0.22 * Math.abs(Math.sin(now * 0.006)));
     if (edge > 0) {
       const t = 80;
-      g.fillStyle(0xd01818, edge);
-      g.fillRect(0, 0, W, t); g.fillRect(0, H - t, W, t); g.fillRect(0, 0, t, H); g.fillRect(W - t, 0, t, H);
+      ui.fillRect(0, 0, W, t, 0xd01818, edge);
+      ui.fillRect(0, H - t, W, t, 0xd01818, edge);
+      ui.fillRect(0, 0, t, H, 0xd01818, edge);
+      ui.fillRect(W - t, 0, t, H, 0xd01818, edge);
     }
 
-    this.msgText.setText(h.message || '');
+    ui.endFrame();
   }
 }

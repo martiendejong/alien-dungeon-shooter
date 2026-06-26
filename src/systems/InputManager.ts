@@ -41,7 +41,10 @@ export class InputManager {
   update(_time: number) {
     const JD = Phaser.Input.Keyboard.JustDown;
     this.jumpPressed = JD(this.k.space);
-    this.upPressed = JD(this.k.up) || JD(this.k.w);
+    const upJD = JD(this.k.up) || JD(this.k.w);
+    const hasDir = this.k.left.isDown || this.k.a.isDown || this.k.right.isDown || this.k.d.isDown;
+    if (upJD && hasDir) this.jumpPressed = true; // Up + direction = forward jump
+    else this.upPressed = upJD;                  // Up alone = vertical hop / ledge grab
     this.downPressed = JD(this.k.down) || JD(this.k.s);
     this.interactPressed = JD(this.k.interact);
     this.grenadePressed = JD(this.k.grenade);
