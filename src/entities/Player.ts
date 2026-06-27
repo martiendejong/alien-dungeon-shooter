@@ -180,16 +180,13 @@ export class Player {
     if (this.state === 'hang') {
       if (input.upHeld) this.beginClimbUp();
       else if (input.downPressed) {
+        // All hang-drops go straight down (driftDir=0, noScan=true) so no auto-grab
+        // fires regardless of how the player arrived at the ledge.
+        this.hangFromFall = false;
         if (this.grabRow < this.row) {
           // Jumped up to grab a ledge above → return to the floor we jumped from
           this.beginFall(this.hangDropCol, this.row, 0, true, true);
-        } else if (this.hangFromFall && this.hangDriftDir !== 0) {
-          // Diagonal drift-hang: resume the drift (no scan — intentional)
-          this.hangFromFall = false;
-          this.beginFall(this.hangDropCol, this.row, this.hangDriftDir, true, true);
         } else {
-          // All other hang-drops: find nearest floor below the ledge, prefer own column
-          this.hangFromFall = false;
           let dropCol = this.hangDropCol;
           const f1 = this.grid.floorBelow(dropCol, this.row + 1);
           const gc = dropCol - (this.facing as number);
@@ -499,7 +496,7 @@ export class Player {
           const hangY = r * this.block + this.halfH;
           const fallToY = this.cy(r);
           this.grabCol = ledgeCol; this.grabRow = r;
-          this.hangDropCol = useCol;
+          this.hangDropCol = ledgeCol; // use ledge col so intentional drop finds floor below the ledge
           this.hangFromFall = true;
           this.hangDriftDir = driftDir;
           this.col = col; this.x = origX;
