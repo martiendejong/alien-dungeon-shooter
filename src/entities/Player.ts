@@ -182,11 +182,11 @@ export class Player {
       else if (input.downPressed) {
         if (this.grabRow < this.row) {
           // Jumped up to grab a ledge above → return to the floor we jumped from
-          this.beginFall(this.hangDropCol, this.row, 0, true);
+          this.beginFall(this.hangDropCol, this.row, 0, true, true);
         } else if (this.hangFromFall && this.hangDriftDir !== 0) {
-          // Diagonal drift-hang: resume the drift
+          // Diagonal drift-hang: resume the drift (no scan — intentional)
           this.hangFromFall = false;
-          this.beginFall(this.hangDropCol, this.row, this.hangDriftDir, true);
+          this.beginFall(this.hangDropCol, this.row, this.hangDriftDir, true, true);
         } else {
           // All other hang-drops: find nearest floor below the ledge, prefer own column
           this.hangFromFall = false;
@@ -195,7 +195,7 @@ export class Player {
           const gc = dropCol - (this.facing as number);
           const f2 = this.grid.floorBelow(gc, this.row + 1);
           if (f2 >= 0 && (f1 < 0 || f2 < f1)) dropCol = gc;
-          this.beginFall(dropCol, this.row + 1, 0, true);
+          this.beginFall(dropCol, this.row + 1, 0, true, true);
         }
       }
       return;
@@ -426,7 +426,7 @@ export class Player {
     }
   }
 
-  private beginFall(col: number, startRow: number, driftDir: 0 | 1 | -1 = 0, fromHang = false) {
+  private beginFall(col: number, startRow: number, driftDir: 0 | 1 | -1 = 0, fromHang = false, noScan = false) {
     this.fallFromRun = driftDir !== 0 && (this.state === 'run' || this.state === 'dash');
     const origX = this.x; // preserve for diagonal animation start point
     this.col = col; this.fallStartY = this.y;
@@ -514,9 +514,9 @@ export class Player {
         }
       }
     }
-    // Straight-fall PoP ledge scan (fromHang only): grab the first adjacent ledge while
-    // falling straight down, checking the facing side first (the wall just hung from).
-    if (fromHang && driftDir === 0) {
+    // Straight-fall PoP ledge scan (accidental falls only): grab an adjacent ledge while
+    // falling straight down. Skipped for intentional Down-drops (noScan=true).
+    if (fromHang && driftDir === 0 && !noScan) {
       for (const adj of [this.facing, -(this.facing) as 1 | -1]) {
         const adjCol = col + adj;
         for (let r = startRow + 1; r < landRow; r++) {
