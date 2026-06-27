@@ -517,7 +517,7 @@ export class Player {
     if (fromHang && driftDir === 0 && !noScan) {
       for (const adj of [this.facing, -(this.facing) as 1 | -1]) {
         const adjCol = col + adj;
-        for (let r = startRow + 1; r < landRow; r++) {
+        for (let r = startRow + 1; r <= landRow; r++) {
           if (this.grid.isStandFloor(adjCol, r) && !this.grid.isSolid(col, r - 1)) {
             const hangX = this.cx(adjCol) - (adj as number) * this.block * 0.5;
             const hangY = r * this.block + this.halfH;
