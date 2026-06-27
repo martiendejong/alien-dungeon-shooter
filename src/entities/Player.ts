@@ -184,9 +184,19 @@ export class Player {
           // Jumped up to grab a ledge above → return to the floor we jumped from
           this.beginFall(this.hangDropCol, this.row, 0, true);
         } else if (this.hangFromFall) {
-          // Fall-drift hang → Down continues the diagonal fall with same drift direction
           this.hangFromFall = false;
-          this.beginFall(this.hangDropCol, this.row, this.hangDriftDir, true);
+          if (this.hangDriftDir !== 0) {
+            // Diagonal drift-hang: resume the drift
+            this.beginFall(this.hangDropCol, this.row, this.hangDriftDir, true);
+          } else {
+            // Straight-fall hang: same column-selection logic as normal hang-drop
+            let dropCol = this.hangDropCol;
+            const f1 = this.grid.floorBelow(dropCol, this.row + 1);
+            const gc = dropCol - (this.facing as number);
+            const f2 = this.grid.floorBelow(gc, this.row + 1);
+            if (f2 >= 0 && (f1 < 0 || f2 < f1)) dropCol = gc;
+            this.beginFall(dropCol, this.row + 1, 0, true);
+          }
         } else {
           // Climbed down / forward-jump hang → find nearest floor, prefer own column
           let dropCol = this.hangDropCol;
