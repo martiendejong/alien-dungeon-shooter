@@ -30,6 +30,22 @@ class SfxEngine {
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g).connect(this.master); o.start(t); o.stop(t + dur + 0.02);
   }
+  // Melody voice: slow attack (50ms), long ring (1.4s), sine+triangle for warmth
+  private mel(freq: number, vol: number) {
+    this.ensure(); if (!this.ctx || !this.master || this.muted) return;
+    const t = this.now(); const dur = 1.4;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.connect(this.master);
+    const o1 = this.ctx.createOscillator(); o1.type = 'sine';
+    o1.frequency.setValueAtTime(freq, t); o1.connect(g); o1.start(t); o1.stop(t + dur + 0.05);
+    const o2 = this.ctx.createOscillator(); o2.type = 'triangle';
+    o2.frequency.setValueAtTime(freq * 1.003, t); // slight detune for warmth
+    const g2 = this.ctx.createGain(); g2.gain.value = 0.4;
+    o2.connect(g2).connect(g); o2.start(t); o2.stop(t + dur + 0.05);
+  }
   // filtered noise burst
   private noise(dur: number, vol: number, cutoff: number, type: BiquadFilterType = 'lowpass', delay = 0) {
     this.ensure(); if (!this.ctx || !this.master || this.muted) return;
@@ -79,27 +95,27 @@ class SfxEngine {
     [73.4, 77.8, 87.3, 77.8, 73.4, 65.4, 73.4, 77.8, 73.4, 0, 73.4, 0, 65.4, 73.4, 65.4, 55.0],  // B2 climax run
     [73.4, 0, 0, 0, 0, 0, 55.0, 0, 73.4, 0, 0, 0, 65.4, 0, 73.4, 0],                              // B3 sparse
   ];
-  // Melody patterns (triangle, long decay — singing-bowl quality)
-  // Each note rings ~600ms so adjacent 0s are legato "hold".
-  // Frequencies — D Phrygian (D Eb F G A Bb C):
-  //   Eb3=155.6 F3=174.6 G3=196 A3=220 Bb3=233.1 C4=261.6 D4=293.7 Eb4=311.1 F4=349.2
+  // Melody patterns — played via mel() (sine+triangle, 50ms attack, 1.4s ring)
+  // D Phrygian: D3=146.8 Eb3=155.6 F3=174.6 G3=196 A3=220 Bb3=233.1 C4=261.6
+  //             D4=293.7 Eb4=311.1 F4=349.2
+  // Eighth-note rhythm: one note every 2 steps. Each phrase = 2 bars of 4/4.
   private readonly MP = [
-    // M0 — main statement: D rises to Eb, settles A-G, returns via C-Bb-A-G
-    [293.7, 0, 311.1, 0,  220.0, 196.0, 0, 0,   293.7, 0, 261.6, 0,   233.1, 220.0, 0, 196.0],
-    // M1 — low meditation: A falls to F, rises to Bb and back
-    [220.0, 0, 0, 196.0,  174.6, 0, 155.6, 0,   174.6, 196.0, 220.0, 0,   233.1, 0, 220.0, 0],
-    // M2 — bridge circle: starts C, descends to F, climbs back via A-Bb-C
-    [261.6, 0, 233.1, 220.0,  196.0, 220.0, 233.1, 0,  261.6, 0, 293.7, 0,   311.1, 293.7, 261.6, 233.1],
-    // M3 — climax drive: D-Eb-F climb, peak Eb4-F4, fall back
-    [293.7, 311.1, 349.2, 0,  311.1, 293.7, 261.6, 0,   233.1, 261.6, 293.7, 311.1,  349.2, 311.1, 293.7, 0],
-    // M4 — sparse intro/outro: long silences, only 4 anchor notes
-    [293.7, 0, 0, 0,  0, 0, 220.0, 0,   0, 0, 0, 0,   196.0, 0, 0, 293.7],
-    // M5 — call: ascent G→A→Bb→C→D→Eb, then fall D→C→Bb→A
-    [196.0, 0, 220.0, 0,  233.1, 0, 261.6, 0,   293.7, 311.1, 293.7, 0,   261.6, 0, 233.1, 220.0],
-    // M6 — response: starts D falls D→C→Bb→A→G→F, rises F→G→A→Bb
-    [293.7, 261.6, 0, 233.1,  220.0, 0, 196.0, 0,   174.6, 0, 196.0, 220.0,   233.1, 0, 0, 220.0],
-    // M7 — bridge dark: starts high Eb4, chromatic fall Eb→D→C→Bb→A→G→F, rises back
-    [311.1, 0, 293.7, 261.6,  233.1, 220.0, 0, 196.0,   174.6, 0, 196.0, 0,   220.0, 233.1, 261.6, 0],
+    // M0 — main theme: D4 lands, drops to G3, rises Bb3→A3→G3, resolves F3→G3
+    [293.7, 0, 0, 0,  196.0, 0, 233.1, 0,  220.0, 0, 196.0, 0,  174.6, 0, 196.0, 0],
+    // M1 — descent: Bb3 falls stepwise to Eb3, then climbs back to A3
+    [233.1, 0, 220.0, 0,  196.0, 0, 174.6, 0,  155.6, 0, 174.6, 0,  196.0, 0, 220.0, 0],
+    // M2 — bridge arch: C4 steps down to G3, arches back up to D4
+    [261.6, 0, 0, 0,  233.1, 0, 220.0, 0,  196.0, 0, 233.1, 0,  261.6, 0, 293.7, 0],
+    // M3 — climax: D4 climbs to F4 (peak), falls back to A3
+    [293.7, 0, 311.1, 0,  349.2, 0, 311.1, 0,  293.7, 0, 261.6, 0,  233.1, 0, 220.0, 0],
+    // M4 — sparse (intro/outro): four anchor notes, wide breathing space
+    [293.7, 0, 0, 0,  0, 0, 0, 0,  196.0, 0, 0, 0,  233.1, 0, 0, 0],
+    // M5 — call: stepwise ascent G3→A3→Bb3→C4→D4→Eb4, settles D4→C4
+    [196.0, 0, 220.0, 0,  233.1, 0, 261.6, 0,  293.7, 0, 311.1, 0,  293.7, 0, 261.6, 0],
+    // M6 — response: mirror descent Bb3→A3→G3→F3→Eb3, rises back F3→G3→A3
+    [233.1, 0, 220.0, 0,  196.0, 0, 174.6, 0,  155.6, 0, 174.6, 0,  196.0, 0, 220.0, 0],
+    // M7 — dark: full octave fall Eb4→D4→C4→Bb3→A3→G3→F3→Eb3
+    [311.1, 0, 293.7, 0,  261.6, 0, 233.1, 0,  220.0, 0, 196.0, 0,  174.6, 0, 155.6, 0],
   ];
   // Harmony patterns (triangle, mid-range) — A2=110 G2=98 Bb2=116.5 C3=130.8 F2=87.3 D3=146.8 Eb3=155.6
   private readonly HP = [
@@ -164,7 +180,7 @@ class SfxEngine {
     const phraseInSect = phrase - sect.start;
     const melPat = (Math.floor(phraseInSect / 2) % 2 === 0) ? sect.m : sect.m2;
     const m = this.MP[melPat][pos];
-    if (m) this.tone(m, 0.60, 'triangle', 0.10);
+    if (m) this.mel(m, 0.13);
 
     const h = this.HP[sect.h][pos];
     if (h) this.tone(h, 0.36, 'triangle', 0.06);

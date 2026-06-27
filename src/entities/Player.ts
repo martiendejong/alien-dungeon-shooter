@@ -183,25 +183,16 @@ export class Player {
         if (this.grabRow < this.row) {
           // Jumped up to grab a ledge above → return to the floor we jumped from
           this.beginFall(this.hangDropCol, this.row, 0, true);
-        } else if (this.hangFromFall) {
+        } else if (this.hangFromFall && this.hangDriftDir !== 0) {
+          // Diagonal drift-hang: resume the drift
           this.hangFromFall = false;
-          if (this.hangDriftDir !== 0) {
-            // Diagonal drift-hang: resume the drift
-            this.beginFall(this.hangDropCol, this.row, this.hangDriftDir, true);
-          } else {
-            // Straight-fall hang: same column-selection logic as normal hang-drop
-            let dropCol = this.hangDropCol;
-            const f1 = this.grid.floorBelow(dropCol, this.row + 1);
-            const gc = dropCol - (this.facing as number);
-            const f2 = this.grid.floorBelow(gc, this.row + 1);
-            if (f2 >= 0 && (f1 < 0 || f2 < f1)) dropCol = gc;
-            this.beginFall(dropCol, this.row + 1, 0, true);
-          }
+          this.beginFall(this.hangDropCol, this.row, this.hangDriftDir, true);
         } else {
-          // Climbed down / forward-jump hang → find nearest floor, prefer own column
+          // All other hang-drops: find nearest floor below the ledge, prefer own column
+          this.hangFromFall = false;
           let dropCol = this.hangDropCol;
           const f1 = this.grid.floorBelow(dropCol, this.row + 1);
-          const gc = dropCol - (this.facing as number); // gap direction
+          const gc = dropCol - (this.facing as number);
           const f2 = this.grid.floorBelow(gc, this.row + 1);
           if (f2 >= 0 && (f1 < 0 || f2 < f1)) dropCol = gc;
           this.beginFall(dropCol, this.row + 1, 0, true);
@@ -534,7 +525,7 @@ export class Player {
             const hangY = r * this.block + this.halfH;
             const fallToY = this.cy(r);
             this.grabCol = adjCol; this.grabRow = r;
-            this.hangDropCol = col;
+            this.hangDropCol = adjCol; // use ledge column so drop finds floor below the ledge
             this.hangFromFall = true;
             this.hangDriftDir = 0;
             const dur = Math.max(220, Math.abs(fallToY - this.y) * M.fallPxPerMs);
