@@ -180,19 +180,20 @@ export class Player {
     if (this.state === 'hang') {
       if (input.upHeld) this.beginClimbUp();
       else if (input.downPressed) {
-        // All hang-drops go straight down (driftDir=0, noScan=true) so no auto-grab
-        // fires regardless of how the player arrived at the ledge.
+        // All hang-drops go straight down (driftDir=0) so drift scans can't re-grab.
+        // The straight-fall scan still runs so the player grabs the next ledge when
+        // falling more than 1 floor (PoP mechanic).
         this.hangFromFall = false;
         if (this.grabRow < this.row) {
           // Jumped up to grab a ledge above → return to the floor we jumped from
-          this.beginFall(this.hangDropCol, this.row, 0, true, true);
+          this.beginFall(this.hangDropCol, this.row, 0, true);
         } else {
           let dropCol = this.hangDropCol;
           const f1 = this.grid.floorBelow(dropCol, this.row + 1);
           const gc = dropCol - (this.facing as number);
           const f2 = this.grid.floorBelow(gc, this.row + 1);
           if (f2 >= 0 && (f1 < 0 || f2 < f1)) dropCol = gc;
-          this.beginFall(dropCol, this.row + 1, 0, true, true);
+          this.beginFall(dropCol, this.row + 1, 0, true);
         }
       }
       return;
