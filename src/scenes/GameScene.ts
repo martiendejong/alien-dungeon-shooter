@@ -8,6 +8,11 @@ import l2 from '../levels/level2.lvl?raw';
 import l3 from '../levels/level3.lvl?raw';
 import l4 from '../levels/level4.lvl?raw';
 import l5 from '../levels/level5.lvl?raw';
+import l6 from '../levels/level6.lvl?raw';
+import l7 from '../levels/level7.lvl?raw';
+import l8 from '../levels/level8.lvl?raw';
+import l9 from '../levels/level9.lvl?raw';
+import l10 from '../levels/level10.lvl?raw';
 import { LevelGrid } from '../levels/grid';
 import { Player, LevelQuery } from '../entities/Player';
 import { Enemy, EnemyHost } from '../entities/Enemy';
@@ -24,10 +29,17 @@ const LEVELS: Record<string, LevelData> = {
   level3: parseLevel('level3', l3),
   level4: parseLevel('level4', l4),
   level5: parseLevel('level5', l5),
+  level6: parseLevel('level6', l6),
+  level7: parseLevel('level7', l7),
+  level8: parseLevel('level8', l8),
+  level9: parseLevel('level9', l9),
+  level10: parseLevel('level10', l10),
 };
 
 // Weapons found persist into later levels (the arsenal grows). Reset when a fresh run begins at level 1.
 const carriedWeapons = new Set<string>();
+let bonusHearts = 0;                          // permanent +max-HP from heart-up pickups (persists across levels)
+const collectedHeartUps = new Set<string>(); // ids of heart-ups already taken, so they never respawn
 
 export interface HudState {
   hp: number; maxHp: number; weapon: string; ammo: string; grenades: number;
@@ -48,8 +60,9 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
   private solidsGroup!: Phaser.Physics.Arcade.StaticGroup;
   private enemies: Enemy[] = [];
   private enemyBullets!: Phaser.Physics.Arcade.Group;
+  private playerBullets!: Phaser.Physics.Arcade.Group; // SMART homing rounds
   private grenades!: Phaser.Physics.Arcade.Group;
-  private pickups: { img: Phaser.GameObjects.Image; kind: string; weaponKey?: WeaponKey }[] = [];
+  private pickups: { img: Phaser.GameObjects.Image; kind: string; weaponKey?: WeaponKey; heartKey?: string }[] = [];
   private reticle!: Phaser.GameObjects.Image;
   private followTarget!: Phaser.GameObjects.Image;
 
@@ -109,8 +122,20 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     this.cameras.main.setBounds(0, 0, W, H).setZoom(1.6).setBackgroundColor(this.level.bgColor);
     this.physics.world.setBounds(0, 0, W, H);
 
-    this.add.tileSprite(0, 0, W, H, 'tile_bg').setOrigin(0, 0).setDepth(-10).setScrollFactor(0.3).setAlpha(0.5);
-    this.add.tileSprite(0, 0, W, H, 'tile_bg').setOrigin(0, 0).setDepth(-5).setScrollFactor(0.6).setAlpha(0.4);
+    // cinematic concept-art backdrop (if real art exists for this level): scaled to cover the
+    // scrolled extent at its scrollFactor, dimmed so the playfield stays readable
+    const bgKey = 'bg_' + this.level.id;
+    const hasBgArt = this.textures.exists(bgKey);
+    if (hasBgArt) {
+      const src = this.textures.get(bgKey).getSourceImage() as HTMLImageElement;
+      const viewW = this.scale.width / 1.6, viewH = this.scale.height / 1.6; // camera zoom = 1.6
+      const sf = 0.22;
+      const needW = viewW + sf * Math.max(0, W - viewW), needH = viewH + sf * Math.max(0, H - viewH);
+      const s = Math.max(needW / src.width, needH / src.height);
+      this.add.image(0, 0, bgKey).setOrigin(0, 0).setScale(s).setDepth(-12).setScrollFactor(sf).setAlpha(0.55);
+    }
+    this.add.tileSprite(0, 0, W, H, 'tile_bg').setOrigin(0, 0).setDepth(-10).setScrollFactor(0.3).setAlpha(hasBgArt ? 0.18 : 0.5);
+    this.add.tileSprite(0, 0, W, H, 'tile_bg').setOrigin(0, 0).setDepth(-5).setScrollFactor(0.6).setAlpha(hasBgArt ? 0.15 : 0.4);
 
     this.buildBackground();
     this.buildSolids();
@@ -125,6 +150,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     for (const lp of this.lampPositions) this.lighting.addLight(lp.x, lp.y, this.block * 3.5, 0.5, 0xffcf6a, 0.12); // wall lamps glow
 
     this.enemyBullets = this.physics.add.group({ allowGravity: false });
+    this.playerBullets = this.physics.add.group({ allowGravity: false });
     this.grenades = this.physics.add.group({ allowGravity: true });
 
     this.parseMarkers();
@@ -132,10 +158,11 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
 
     this.physics.add.collider(this.grenades, this.solidsGroup);
     this.physics.add.collider(this.enemyBullets, this.solidsGroup, (b) => (b as any).destroy());
+    this.physics.add.collider(this.playerBullets, this.solidsGroup, (b: any) => { if (b.getData && b.getData('rocket')) this.explode(b.x, b.y, b.getData('radius'), b.getData('dmg')); b.destroy(); });
 
     this.input2 = new InputManager(this);
     this.weapons = new WeaponSystem(this);
-    if (this.level.id === 'level1') carriedWeapons.clear();           // fresh run starts at the picture level
+    if (this.level.id === 'level1') { carriedWeapons.clear(); bonusHearts = 0; collectedHeartUps.clear(); } // fresh run resets arsenal + heart bonuses
     if (!this.level.startUnarmed) this.weapons.acquire();             // armed by default; level 1 starts unarmed
     for (const k of carriedWeapons) this.weapons.give(k as WeaponKey); // carry the arsenal found in earlier levels
     this._player.armed = this.weapons.armed;                          // no gun drawn until acquired
@@ -267,8 +294,10 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
 
   private buildBackground() {
     const b = this.block;
-    // ONE world-size brick layer behind everything — tinted darker so the background recedes
-    this.tileRegion(0, 0, this.grid.worldW, this.grid.worldH, 'tile_brick', 2, 'block').setTint(0x8c8c98);
+    // ONE world-size brick layer behind everything — tinted darker so the background recedes.
+    // With a concept-art backdrop present, the brick goes translucent so the art shows through.
+    const brick = this.tileRegion(0, 0, this.grid.worldW, this.grid.worldH, 'tile_brick', 2, 'block').setTint(0x8c8c98);
+    if (this.textures.exists('bg_' + this.level.id)) brick.setAlpha(0.42);
     // wall items hung on the brick (no windows). Lamps are weighted and also cast light.
     const props = ['prop_lamp', 'prop_lamp', 'prop_pipes', 'prop_chains', 'prop_grate', 'prop_sign'];
     this.lampPositions = [];
@@ -362,6 +391,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     const kindOf: Record<string, EnemyKind> = {
       g: 'guard', c: 'crawler', r: 'grenadier', W: 'warden', Z: 'subject', Q: 'queen', K: 'commander', O: 'overmind',
       R: 'trooper_red', G: 'trooper_gold', M: 'marksman', N: 'sniper', B: 'bomber', H: 'hunter', J: 'leaper', U: 'brute', D: 'drone', F: 'gundrone',
+      A: 'heavygunner',
     };
     for (let row = 0; row < this.grid.rows; row++) {
       for (let col = 0; col < this.grid.cols; col++) {
@@ -369,19 +399,24 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
         const floorRow = row + 1;
         if (ch === 'P') {
           this._player = new Player(this, this.grid, col, floorRow);
+          this._player.maxHp += bonusHearts; this._player.hp = this._player.maxHp; // apply permanent heart bonus
           this.respawn = { col, floorRow }; this.respawnArmed = !this.level.startUnarmed; this.cpReached = 0;
         } else if (ch === 'h') {
           this.add.tileSprite(col * b, row * b, b, b, 'tile_hide').setOrigin(0, 0).setDepth(19).setAlpha(0.92);
-        } else if (ch === 'm' || ch === 'a' || ch === 'w' || ch === 'x' || ch === 'y' || ch === 'z') {
-          const WK: Record<string, WeaponKey> = { w: 'pistol', x: 'shotgun', y: 'smg', z: 'rifle' };
-          const TINT: Record<string, number> = { pistol: 0xffffff, shotgun: 0xff9a3a, smg: 0x6ad0ff, rifle: 0x7aff8a };
+        } else if (ch === '+' && collectedHeartUps.has(`${this.level.id}:${col}:${row}`)) {
+          // permanent heart-up already taken on a previous attempt — leave the cell empty
+        } else if (ch === 'm' || ch === 'a' || ch === 'w' || ch === 'x' || ch === 'y' || ch === 'z' || ch === 'q' || ch === 'k' || ch === 'v' || ch === 'j' || ch === 'b' || ch === '+' || ch === '*') {
+          const WK: Record<string, WeaponKey> = { w: 'pistol', x: 'shotgun', y: 'smg', z: 'rifle', q: 'homing', k: 'glauncher', v: 'rocket', j: 'minigun', b: 'autoshot' };
+          const TINT: Record<string, number> = { pistol: 0xffffff, shotgun: 0xff9a3a, smg: 0x6ad0ff, rifle: 0x7aff8a, homing: 0x6affd0, glauncher: 0xffcf3a, rocket: 0xff5a3a, minigun: 0xff3a6a, autoshot: 0xffae3a };
           const wkey = WK[ch];
-          const kind = ch === 'm' ? 'medkit' : wkey ? 'weapon' : 'ammo';
-          const tex = kind === 'weapon' ? 'gun' : kind;
+          const kind = ch === 'm' ? 'medkit' : ch === '+' ? 'heartup' : ch === '*' ? 'grenadeammo' : wkey ? 'weapon' : 'ammo';
+          const tex = kind === 'weapon' ? 'gun' : kind === 'heartup' ? 'heart_full' : kind === 'grenadeammo' ? 'grenade' : kind;
           const img = this.add.image(col * b + b / 2, row * b + b / 2, tex).setDepth(30);
           if (kind === 'weapon') { img.setDisplaySize(28, 28 * img.height / img.width); if (wkey) img.setTint(TINT[wkey]); } // a small gun on the floor (texture is large)
+          else if (kind === 'heartup') { img.setDisplaySize(26, 26); }   // a shiny full heart on the floor
+          else if (kind === 'grenadeammo') { img.setDisplaySize(22, 22); } // a grenade to pick up
           this.tweens.add({ targets: img, y: img.y - 6, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-          this.pickups.push({ img, kind, weaponKey: wkey });
+          this.pickups.push({ img, kind, weaponKey: wkey, heartKey: ch === '+' ? `${this.level.id}:${col}:${row}` : undefined });
         } else if (ch === 'E') {
           this.exitX = col * b + b / 2; this.exitY = floorRow * b - 36;
           this.add.image(this.exitX, this.exitY, 'exit').setDisplaySize(64, 64).setDepth(25);
@@ -413,6 +448,64 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     this.time.delayedCall(2200, () => { if (b.active) b.destroy(); });
   }
   fireEnemyBullet(x: number, y: number, angle: number, speed: number, dmg: number) { this.fireBullet(x, y, angle, speed, dmg, false); Sfx.enemyShot(); this.alertSoldiers(); }
+
+  // SMART round: a slow projectile that gently curves toward the nearest enemy mid-flight.
+  fireHoming(x: number, y: number, angle: number, speed: number, dmg: number) {
+    const b = this.playerBullets.create(x, y, 'bullet_enemy') as Phaser.Physics.Arcade.Image;
+    b.setRotation(angle).setDepth(63).setTint(0x6affd0).setData('dmg', dmg);
+    (b.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    this.physics.velocityFromRotation(angle, speed, (b.body as Phaser.Physics.Arcade.Body).velocity);
+    this.time.delayedCall(2600, () => { if (b.active) b.destroy(); });
+    Sfx.shot();
+  }
+  // GRENADE LAUNCHER: lob an arcing grenade in the aim direction (reuses the grenade physics + fuse + explosion).
+  fireGrenadeLauncher(x: number, y: number, angle: number, speed: number) {
+    this.spawnGrenade(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed - 90, true);
+    Sfx.shot();
+  }
+  // ROCKET: a fast straight projectile that detonates on the first wall or enemy it touches.
+  fireRocket(x: number, y: number, angle: number, speed: number, dmg: number, radius: number) {
+    const b = this.playerBullets.create(x, y, 'grenade') as Phaser.Physics.Arcade.Image;
+    b.setRotation(angle).setDepth(63).setTint(0xffaa3a).setScale(1.5).setData('dmg', dmg).setData('rocket', true).setData('radius', radius);
+    (b.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    this.physics.velocityFromRotation(angle, speed, (b.body as Phaser.Physics.Arcade.Body).velocity);
+    this.time.delayedCall(3200, () => { if (b.active) b.destroy(); });
+    Sfx.shot();
+  }
+  private updatePlayerBullets(delta: number) {
+    const def: any = TUNING.weapons.homing;
+    const maxTurn = def.turnRate * (delta / 1000);
+    for (const b of this.playerBullets.getChildren() as Phaser.Physics.Arcade.Image[]) {
+      if (!b.active) continue;
+      const body = b.body as Phaser.Physics.Arcade.Body;
+      const isRocket = b.getData('rocket');
+      if (!isRocket) {
+        // homing: steer toward the nearest live enemy within seek range
+        let best: Enemy | undefined, bd = def.seekRange;
+        for (const en of this.enemies) {
+          if (!en.alive) continue;
+          const d = Phaser.Math.Distance.Between(b.x, b.y, en.x, en.y - 8);
+          if (d < bd) { bd = d; best = en; }
+        }
+        if (best) {
+          const cur = Math.atan2(body.velocity.y, body.velocity.x);
+          const want = Math.atan2((best.y - 8) - b.y, best.x - b.x);
+          const na = cur + Phaser.Math.Clamp(Phaser.Math.Angle.Wrap(want - cur), -maxTurn, maxTurn);
+          this.physics.velocityFromRotation(na, def.projSpeed, body.velocity);
+          b.setRotation(na);
+        }
+      }
+      // hit the first enemy it touches — rockets detonate (AoE), smart rounds hit one
+      for (const en of this.enemies) {
+        if (!en.alive) continue;
+        if (Phaser.Geom.Rectangle.Contains(en.getBounds(), b.x, b.y)) {
+          if (isRocket) this.explode(b.x, b.y, b.getData('radius'), b.getData('dmg'));
+          else { en.takeDamage(b.getData('dmg')); Sfx.hit(); }
+          b.destroy(); break;
+        }
+      }
+    }
+  }
 
   hitscan(x: number, y: number, angle: number, dmg: number, range: number) {
     const dx = Math.cos(angle), dy = Math.sin(angle);
@@ -505,8 +598,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     this.tweens.add({ targets: g, angle: 360, duration: 600, repeat: -1 });
     this.time.delayedCall(TUNING.grenade.fuseMs, () => { if (g.active) { this.explode(g.x, g.y); g.destroy(); } });
   }
-  explode(x: number, y: number) {
-    const R = TUNING.grenade.radius;
+  explode(x: number, y: number, R: number = TUNING.grenade.radius, dmg: number = TUNING.grenade.dmg) {
     Sfx.explosion();
     this.lighting.pulse(x, y, R * 2.2, 1, 160);
     this.cameras.main.shake(220, 0.012);
@@ -518,7 +610,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       this.tweens.add({ targets: pt, x: x + Math.cos(a) * sp, y: y + Math.sin(a) * sp, alpha: 0, duration: 380, onComplete: () => pt.destroy() });
     }
     if (this._player.alive && Phaser.Math.Distance.Between(x, y, this._player.x, this._player.y) <= R) this._player.takeDamage(1, true);
-    for (const en of this.enemies) if (en.alive && Phaser.Math.Distance.Between(x, y, en.x, en.y) <= R) en.takeDamage(TUNING.grenade.dmg);
+    for (const en of this.enemies) if (en.alive && Phaser.Math.Distance.Between(x, y, en.x, en.y) <= R) en.takeDamage(dmg);
   }
 
   shockwave(x: number, y: number, radius: number) {
@@ -544,9 +636,15 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
   }
 
   // ---- gameplay -------------------------------------------------------------
-  private collect(p: { img: Phaser.GameObjects.Image; kind: string; weaponKey?: WeaponKey }) {
+  private collect(p: { img: Phaser.GameObjects.Image; kind: string; weaponKey?: WeaponKey; heartKey?: string }) {
     Sfx.pickup();
     if (p.kind === 'medkit') { this._player.hp = Math.min(this._player.maxHp, this._player.hp + 1); this.flashMessage('+1 HEART'); }
+    else if (p.kind === 'heartup') {
+      bonusHearts++; this._player.maxHp += 1; this._player.hp = this._player.maxHp; // permanent extra heart, healed to full
+      if (p.heartKey) collectedHeartUps.add(p.heartKey);
+      this.flashMessage('+1 MAX HEART — PERMANENT!');
+    }
+    else if (p.kind === 'grenadeammo') { this.grenadeCount += 2; this.flashMessage('+2 GRENADES'); }
     else if (p.kind === 'weapon') {
       const key = p.weaponKey ?? 'pistol';
       this.weapons.give(key); this._player.armed = true;
@@ -585,19 +683,35 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     this.input2.update(time);
     if (this.input2.pausePressed && !this.ended) this.paused = !this.paused;
     if (this.paused) { this.hud.message = 'PAUSED  (ESC to resume)'; this.msgUntil = time + 100; this.syncHud(); return; }
+    if (this.input2.skipLevelTapped && !this.input2.skipLevelPressed && !this.ended)
+      this.flashMessage(`LEVEL SKIP ${this.input2.skipLevelTaps}/3`); // tap feedback so you can see L register
+    if (this.input2.skipLevelPressed && !this.ended) { this.win(); return; } // L×3 debug: skip to next level
+    if (this.input2.giveAllTapped && !this.input2.giveAllPressed && !this.ended) this.flashMessage(`WEAPONS ${this.input2.giveAllTaps}/3`);
+    if (this.input2.giveAllPressed && !this.ended) { (['pistol','shotgun','smg','rifle','homing','glauncher','rocket','minigun','autoshot'] as WeaponKey[]).forEach(k => this.weapons.give(k)); this.flashMessage('ALL WEAPONS UNLOCKED'); } // K×3 debug
+    if (this.input2.giveHeartTapped && !this.input2.giveHeartPressed && !this.ended) this.flashMessage(`+HEART ${this.input2.giveHeartTaps}/3`);
+    if (this.input2.giveHeartPressed && !this.ended) { bonusHearts++; this._player.maxHp += 1; this._player.hp = this._player.maxHp; this.flashMessage('+1 MAX HEART (PERMANENT)'); } // J×3 debug
 
+    this._player.moveSpeedScale = this.weapons.armed ? (this.weapons.current.def.moveScale ?? 1) : 1; // heavy weapon = slower
     this._player.tick(time, delta, this.input2, this);
     if (this._player.alive) {
       const st = this._player.state;
-      if (st !== 'hang' && st !== 'climbUp' && st !== 'climb') this.weapons.update(time, this.input2, this._player);
+      // You can shoot on a ladder and while hanging on a ledge — only the mantle (climbUp) animation locks firing.
+      if (st !== 'climbUp') this.weapons.update(time, this.input2, this._player);
       this.handleGrenade(time);
       this.handleMelee();
-      this.handlePlayerHits(time);
+      this.handlePlayerHits(time, delta);
       if (this.grid.isSpike(this._player.col, this._player.row) && (st === 'idle' || st === 'step' || st === 'run' || st === 'melee')) {
         this.flashMessage('IMPALED ON THE SPIKES'); this._player.takeDamage(999, true);
       }
     }
-    for (const e of this.enemies) e.update(time, delta);
+    // Sleep enemies that are far outside the view (in a circle) so big crowds stay fast.
+    const px = this._player.x, py = this._player.y, cull = TUNING.enemyActiveRadius;
+    for (const e of this.enemies) {
+      const far = Phaser.Math.Distance.Between(px, py, e.x, e.y) > cull;
+      e.setVisible(!far);
+      if (!far) e.update(time, delta);
+    }
+    this.updatePlayerBullets(delta);
     this.updateLooseTiles(time);
     this.updatePuzzles(time);
     this.updateAlarm(time, delta);
@@ -695,6 +809,14 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       if (t.falling) continue;
       const onIt = !!p && p.alive && grounded && pcol === t.col && p.row === t.row;
       if (onIt && t.fallAt === 0) t.fallAt = time + 400;
+      // Jump-up knocks loose tiles within reach above the player or one step in facing direction.
+      // p.row is the floor row (doesn't change during jump), so tiles above the head start at p.row-2;
+      // with jumpUpReach=3 the head sweeps up to ~p.row-4 at peak.
+      if (!!p && p.alive && p.state === 'jumpUp' && t.fallAt === 0) {
+        const inRange = t.row < p.row && t.row >= p.row - (TUNING.move.jumpUpReach + 1);
+        if (inRange && (t.col === pcol || t.col === pcol + (p.facing as number)))
+          t.fallAt = time + 300;
+      }
       if (t.fallAt > 0 && time < t.fallAt) {
         const elapsed = time - (t.fallAt - 400);
         if (elapsed < 160) {
@@ -763,12 +885,20 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
       }
     }
   }
-  private handlePlayerHits(time: number) {
+  private handlePlayerHits(time: number, delta: number) {
     const pb = this._player.getBounds();
-    // enemy bullets vs player
+    Phaser.Geom.Rectangle.Inflate(pb, 3, 3); // small grace so grazing hits register
+    const dtSec = delta / 1000;
+    // enemy bullets vs player — swept test (segment from last frame's pos to now) so fast shots
+    // from above/below can't tunnel straight through the hitbox between frames.
     for (const b of this.enemyBullets.getChildren() as Phaser.Physics.Arcade.Image[]) {
       if (!b.active) continue;
-      if (Phaser.Geom.Rectangle.Contains(pb, b.x, b.y)) { if (this._player.takeDamage(1)) Sfx.hit(); b.destroy(); }
+      const body = b.body as Phaser.Physics.Arcade.Body | null;
+      const x0 = b.x - (body ? body.velocity.x * dtSec : 0);
+      const y0 = b.y - (body ? body.velocity.y * dtSec : 0);
+      const hit = Phaser.Geom.Rectangle.Contains(pb, b.x, b.y)
+        || Phaser.Geom.Intersects.LineToRectangle(new Phaser.Geom.Line(x0, y0, b.x, b.y), pb);
+      if (hit) { if (this._player.takeDamage(1)) Sfx.hit(); b.destroy(); }
     }
     // melee/hunter contact: costs the player 1 heart; "fragile" ones (crawlers/leapers) die on contact, the rest keep attacking
     for (const en of this.enemies) {

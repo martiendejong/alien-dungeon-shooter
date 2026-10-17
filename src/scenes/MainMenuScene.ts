@@ -7,13 +7,22 @@ export class MainMenuScene extends Phaser.Scene {
     const { width: w, height: h } = this.scale;
     this.cameras.main.setBackgroundColor('#05070c');
 
-    this.add.text(w / 2, h * 0.26, 'SUBTERRA', {
-      fontFamily: 'Segoe UI, sans-serif', fontSize: '72px', color: '#6fe3c0', fontStyle: 'bold',
-    }).setOrigin(0.5).setShadow(0, 0, '#0d3b33', 24, true, true);
+    // cover art backdrop (THE LOST BLACK SITE concept cover); the cover carries the title art,
+    // so the drawn SUBTERRA heading only appears when the cover is missing
+    const hasCover = this.textures.exists('bg_title');
+    if (hasCover) {
+      const img = this.add.image(w / 2, h / 2, 'bg_title');
+      img.setScale(Math.max(w / img.width, h / img.height));
+      this.add.rectangle(w / 2, h * 0.56, w, h * 0.34, 0x05070c, 0.52);
+    } else {
+      this.add.text(w / 2, h * 0.26, 'SUBTERRA', {
+        fontFamily: 'Segoe UI, sans-serif', fontSize: '72px', color: '#6fe3c0', fontStyle: 'bold',
+      }).setOrigin(0.5).setShadow(0, 0, '#0d3b33', 24, true, true);
 
-    this.add.text(w / 2, h * 0.26 + 56, 'ALIEN DUNGEON SHOOTER', {
-      fontFamily: 'Segoe UI, sans-serif', fontSize: '18px', color: '#4a5a70', letterSpacing: '6px' as any,
-    }).setOrigin(0.5);
+      this.add.text(w / 2, h * 0.26 + 56, 'ALIEN DUNGEON SHOOTER', {
+        fontFamily: 'Segoe UI, sans-serif', fontSize: '18px', color: '#4a5a70', letterSpacing: '6px' as any,
+      }).setOrigin(0.5);
+    }
 
     const controls = [
       '←  →   move        ↑ climb / mantle / ladder        ↓ crouch / descend',
