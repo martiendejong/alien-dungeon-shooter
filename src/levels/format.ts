@@ -10,8 +10,8 @@ import { LevelData, EnemyKind } from './types';
 //   #=wall/floor  .=empty  L=ladder  S=spikes  T=loose tile
 //   P=spawn  E=exit/elevator  h=hide niche
 //   g=soldier c=crawler r=grenadier  R/G=trooper(red/gold) M=marksman N=sniper B=bomber
-//   H=hunter D=drone F=gundrone U=brute J=leaper   W/Z/Q/K/O=bosses
-//   m=medkit a=ammo  w=pistol x=shotgun y=smg z=rifle
+//   H=hunter D=drone F=gundrone U=brute J=leaper A=heavygunner(tanky machine-gunner)   W/Z/Q/K/O=bosses
+//   m=medkit a=ammo  w=pistol x=shotgun y=smg z=rifle q=smart(homing) k=grenade-launcher v=rocket j=super-mg b=auto-shotgun  +=heart-up(perm +1 max HP)  *=grenades
 
 const num = (s: string): number => s.startsWith('0x') ? parseInt(s, 16) : parseFloat(s);
 const col = (s: string | undefined): number | undefined => (!s || s === '-') ? undefined : num(s);

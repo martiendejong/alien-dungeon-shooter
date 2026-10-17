@@ -3,12 +3,15 @@ import { TUNING } from '../config/tuning';
 import { InputManager } from './InputManager';
 import { Player } from '../entities/Player';
 
-export type WeaponKey = 'pistol' | 'shotgun' | 'smg' | 'rifle';
+export type WeaponKey = 'pistol' | 'shotgun' | 'smg' | 'rifle' | 'homing' | 'glauncher' | 'rocket' | 'minigun' | 'autoshot';
 interface Slot { key: WeaponKey; def: any; ammo: number; owned: boolean; }
 
 export interface CombatHost {
   fireBullet(x: number, y: number, angle: number, speed: number, dmg: number, friendly: boolean): void;
   hitscan(x: number, y: number, angle: number, dmg: number, range: number): void;
+  fireHoming(x: number, y: number, angle: number, speed: number, dmg: number): void;
+  fireGrenadeLauncher(x: number, y: number, angle: number, speed: number): void;
+  fireRocket(x: number, y: number, angle: number, speed: number, dmg: number, radius: number): void;
   flash(x: number, y: number): void;
 }
 
@@ -26,6 +29,11 @@ export class WeaponSystem {
       { key: 'shotgun', def: w.shotgun, ammo: w.shotgun.ammo, owned: false },
       { key: 'smg', def: w.smg, ammo: w.smg.ammo, owned: false },
       { key: 'rifle', def: w.rifle, ammo: w.rifle.ammo, owned: false },
+      { key: 'homing', def: w.homing, ammo: w.homing.ammo, owned: false },
+      { key: 'glauncher', def: w.glauncher, ammo: w.glauncher.ammo, owned: false },
+      { key: 'rocket', def: w.rocket, ammo: w.rocket.ammo, owned: false },
+      { key: 'minigun', def: w.minigun, ammo: w.minigun.ammo, owned: false },
+      { key: 'autoshot', def: w.autoshot, ammo: w.autoshot.ammo, owned: false },
     ];
   }
 
@@ -75,6 +83,7 @@ export class WeaponSystem {
     const wantAuto = input.firePressed && s.def.auto;
     this.wasFire = input.firePressed;
     if (!(wantSemi || wantAuto)) return;
+    if (s.def.standOnly && !player.isGrounded) return; // heavy weapons (SUPER MG / AUTO SHOT) fire only while standing
     if (time < this.nextFireAt) return;
     if (s.ammo <= 0) return;
 
@@ -84,9 +93,19 @@ export class WeaponSystem {
     const m = player.getMuzzle();
     const base = player.aimAngle;
     const pellets = s.def.pellets ?? 1;
+    const rx = s.def.range;                                   // horizontal reach
+    const ry = rx * TUNING.playerAim.verticalFactor;          // shorter vertical reach (ellipse)
     for (let p = 0; p < pellets; p++) {
       const spread = (Math.random() - 0.5) * 2 * s.def.spread;
-      this.host.hitscan(m.x, m.y, base + spread, s.def.dmg, s.def.range);
+      const ang = base + spread;
+      if (s.key === 'homing') { this.host.fireHoming(m.x, m.y, ang, s.def.projSpeed, s.def.dmg); continue; } // smart round, not hitscan
+      if (s.key === 'glauncher') { this.host.fireGrenadeLauncher(m.x, m.y, ang, s.def.projSpeed); continue; } // lobbed grenade
+      if (s.key === 'rocket') { this.host.fireRocket(m.x, m.y, ang, s.def.projSpeed, s.def.dmg, s.def.radius); continue; } // explosive rocket
+      const c = Math.cos(ang), si = Math.sin(ang);
+      // reach to the ellipse edge along this angle, then jitter it a touch per shot
+      let reach = (rx * ry) / Math.hypot(ry * c, rx * si);
+      reach *= 1 + (Math.random() - 0.5) * 2 * TUNING.playerAim.rangeJitter;
+      this.host.hitscan(m.x, m.y, ang, s.def.dmg, reach);
     }
     this.host.flash(m.x, m.y);
     player.beginReload(s.def.cooldownMs); // stand still and reload before the next shot

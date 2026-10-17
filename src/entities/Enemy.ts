@@ -77,8 +77,10 @@ export class Enemy extends Phaser.GameObjects.Sprite {
     this.cfg.reloadMs = Math.round((this.cfg.reloadMs ?? TUNING.enemyFire.reloadMs) * f);
     this.cfg.sightPx = Math.round((this.cfg.sightPx ?? 360) * (1 + tier * 0.12)); // see farther
     if (this.cfg.projSpeed) this.cfg.projSpeed = Math.round(this.cfg.projSpeed * (1 + tier * 0.08)); // faster bullets
-    if (this.behavior === 'ranged' || this.behavior === 'gunner' || this.behavior === 'drone')
-      this.cfg.burst = { count: 1 + tier, gapMs: 460 };                        // more shots per burst
+    if (this.behavior === 'ranged' || this.behavior === 'gunner' || this.behavior === 'drone') {
+      if (this.cfg.mg) this.cfg.burst = { count: (this.cfg.burst?.count ?? 10) + tier * 2, gapMs: this.cfg.burst?.gapMs ?? 70 }; // keep machine-gunners spraying
+      else this.cfg.burst = { count: 1 + tier, gapMs: 460 };                   // more shots per burst
+    }
   }
 
   /** A shot was fired (by anyone): soldiers snap to face the player and HOLD POSITION for 5s before
@@ -112,9 +114,11 @@ export class Enemy extends Phaser.GameObjects.Sprite {
 
   private canSee(p: Player): boolean {
     if (!p.alive) return false;
-    const d = Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y);
     const dark = this.host.darknessAt(p.x, p.y);
-    if (d > this.cfg.sightPx * (1 - 0.45 * dark)) return false;
+    const rx = this.cfg.sightPx * (1 - 0.45 * dark);          // horizontal reach
+    const ry = rx * TUNING.enemyVision.verticalFactor;        // shorter vertical reach → wide, flat ellipse
+    const ex = (p.x - this.x) / rx, ey = (p.y - this.y) / ry;
+    if (ex * ex + ey * ey > 1) return false;                  // outside the sight ellipse
     if (!this.host.losClear(this.x, this.y - 8, p.x, p.y - 6)) return false;
     if (this.behavior !== 'melee' && this.behavior !== 'hunter' && p.inCover) return false; // melee/hunters sense you in cover
     return true;
@@ -247,7 +251,7 @@ export class Enemy extends Phaser.GameObjects.Sprite {
   private tryStep(dir: 1 | -1, run: boolean) {
     this.facing = dir;
     if (this.behavior === 'hunter' ? !this.standAt(this.col + dir, this.row) : !this.walkablePatrol(this.col + dir)) return;
-    const dur = run ? (TUNING.move.runMs / TUNING.move.runBlocks) : TUNING.move.stepMs;
+    const dur = (run ? (TUNING.move.runMs / TUNING.move.runBlocks) : TUNING.move.stepMs) * (this.cfg.moveScale ?? 1);
     this.startMove(this.col + dir, this.row, dur, 0);
   }
   private jumpGap(dir: 1 | -1): boolean {

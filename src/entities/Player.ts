@@ -8,7 +8,7 @@ export interface LevelQuery {
   darknessAt(x: number, y: number): number;
 }
 
-type State = 'idle' | 'turn' | 'step' | 'run' | 'jumpUp' | 'jumpFwd' | 'fall' | 'hang' | 'climb' | 'climbUp' | 'cover' | 'melee' | 'dash' | 'dead';
+type State = 'idle' | 'turn' | 'step' | 'run' | 'jumpUp' | 'jumpFwd' | 'fall' | 'hang' | 'climb' | 'climbUp' | 'cover' | 'crouch' | 'melee' | 'dash' | 'dead';
 
 interface Action {
   type: State;
@@ -40,6 +40,7 @@ export class Player {
   private act?: Action;
   private vis: Phaser.GameObjects.Sprite;
   private gun: Phaser.GameObjects.Image;
+  private coverGlow!: Phaser.GameObjects.Image; // soft halo shown while hiding so you can see yourself
   private invulnUntil = 0;
   private meleeUntil = 0;
   private meleeCdUntil = 0;
@@ -56,11 +57,14 @@ export class Player {
   private hangDropCol = 0;    // column to fall through when dropping from hang
   private hangFromFall = false; // hang was grabbed during a drift-fall → Down lands on current row
   private hangDriftDir: 0 | 1 | -1 = 0; // saved drift direction for chained diagonal drops
+  private hangStandRow = 0;   // platform row we hung from — used to measure hang-drop fall distance
   private bob = 0;
   private climbTopY = 0; private climbBottomY = 0; private fallStartY = 0;
   private fallFromRun = false; // run-off ledge → show run anim briefly at fall start
   private onLadderStop = false; // arrived on a ladder via run/step → stay until key released
+  private crouching = false;    // sitting low (Down held / stuck under a low ceiling) → short hitbox, hop-moves
   armed = true;                 // when false (start of L1) no gun is drawn until you pick one up
+  moveSpeedScale = 1;           // >1 = slower steps/run (heavy weapons like the SUPER MG); set by GameScene each frame
   private coleSheet = false;    // using the real player sprite sheet (feet-aligned)
   private coleSheet2 = false;   // hang/mantle ledge-climb sheet
   private coleSheet3 = false;   // ladder-climb sheet
@@ -81,6 +85,8 @@ export class Player {
     else
       this.vis = scene.add.sprite(this.x, this.y, 'cole_idle').setDepth(40);
     this.gun = scene.add.image(this.x, this.y, 'gun').setOrigin(0.25, 0.6).setDepth(41);
+    // faint glow drawn ABOVE the darkness overlay (depth 60) while hiding — lights you up a touch
+    this.coverGlow = scene.add.image(this.x, this.y, 'light').setDepth(61).setBlendMode(Phaser.BlendModes.ADD).setTint(0x9fd0ff).setVisible(false);
     this.gunScale = 26 / Math.max(1, this.gun.width); // fit any art to ~26px wide
   }
   private gunScale = 1;
@@ -90,6 +96,8 @@ export class Player {
   private cy(r: number) { return r * this.block - this.halfH; } // feet on top of floor row r
 
   get isClimbing() { return this.state === 'climb'; }
+  // grounded & braced enough to fire a heavy weapon — not airborne, hanging, climbing or dashing
+  get isGrounded() { const s = this.state; return s === 'idle' || s === 'step' || s === 'run' || s === 'turn' || s === 'crouch' || s === 'cover' || s === 'melee'; }
   get canMeleeNow() { return this.scene.time.now >= this.meleeCdUntil; }
   private get busy() { return !!this.act; }
 
@@ -98,6 +106,11 @@ export class Player {
       // hands grip ledge top; head/shoulders extend above — shift hitbox up so enemies can hit
       const top = this.y - this.halfH * 3;
       return new Phaser.Geom.Rectangle(this.x - this.halfW, top, this.halfW * 2, this.halfH * 2);
+    }
+    if (this.crouching) {
+      // sitting low — short box, anchored at the feet (so shots clear over the tucked head)
+      const feet = this.y + this.halfH, h = this.block * 0.95;
+      return new Phaser.Geom.Rectangle(this.x - this.halfW, feet - h, this.halfW * 2, h);
     }
     return new Phaser.Geom.Rectangle(this.x - this.halfW, this.y - this.halfH, this.halfW * 2, this.halfH * 2);
   }
@@ -143,7 +156,7 @@ export class Player {
   /** Respawn at a checkpoint: full health, grounded, idle. */
   revive(col: number, floorRow: number) {
     this.alive = true; this.hp = this.maxHp; this.state = 'idle'; this.act = undefined;
-    this.inCover = false; this.bufferedJump = false; this.runDist = 0; this.reloadUntil = 0;
+    this.inCover = false; this.bufferedJump = false; this.runDist = 0; this.reloadUntil = 0; this.crouching = false;
     this.col = col; this.row = floorRow; this.x = this.cx(col); this.y = this.cy(floorRow);
     this.invulnUntil = this.scene.time.now + 1200; // brief safety i-frames
     this.vis.clearTint().setAlpha(1);
@@ -155,6 +168,7 @@ export class Player {
     if (!this.alive) { this.syncVisual(); return; }
 
     if (this.state === 'climb') { this.updateClimb(dtMs, input); this.syncVisual(); return; }
+    if (this.state === 'crouch') { this.updateCrouch(input); this.syncVisual(); return; }
 
     // jump can be buffered out of a run ("finish the run, then jump")
     // jump pressed DURING a step/run → resolve when the move finishes (run = big jump)
@@ -176,6 +190,13 @@ export class Player {
   }
 
   private handleReady(time: number, input: InputManager, q: LevelQuery) {
+    this.crouching = false; // standing up by default; the crouch check below re-sits if Down is held / ceiling is low
+    // floor gone under us (a plank collapsed)? drop — UNLESS we're holding a direction toward a solid cell,
+    // i.e. still running across the planks: then keep going (no fall in the gap between run-steps).
+    if (this.state === 'idle' && !this.grid.isSolid(this.col, this.row) && !this.grid.isLadder(this.col, this.row)) {
+      const d = Math.sign(input.moveX) as 1 | -1 | 0;
+      if (d === 0 || !this.canStand(this.col + d, this.row)) { this.beginFall(this.col, this.row + 1); return; }
+    }
     if (this.state === 'cover') { this.updateCover(time, input, q); return; }
     if (this.state === 'hang') {
       if (input.upHeld) this.beginClimbUp();
@@ -184,6 +205,7 @@ export class Player {
         // The straight-fall scan still runs so the player grabs the next ledge when
         // falling more than 1 floor (PoP mechanic).
         this.hangFromFall = false;
+        this.hangStandRow = this.row; // remember the platform we hung from for fall-distance damage
         if (this.grabRow < this.row) {
           // Jumped up to grab a ledge above → return to the floor we jumped from
           this.beginFall(this.hangDropCol, this.row, 0, true);
@@ -213,6 +235,11 @@ export class Player {
     if (input.downHeld && this.grid.isLadder(this.col, this.row) && this.grid.isLadder(this.col, this.row + 1)) { this.enterClimb(); return; }
 
     if (input.downPressed && this.beginClimbDownToHang()) return; // grab & hang on the ledge edge (press down again to drop)
+
+    // crouch: hold Down on solid ground (no ladder/ledge here) → sit. Also auto-sit if stuck under a low ceiling.
+    if (input.downHeld || (this.grid.isSolid(this.col, this.row - 2) && !this.grid.isSolid(this.col, this.row - 1))) {
+      this.crouching = true; this.state = 'crouch'; return;
+    }
 
     if (input.upPressed) { this.beginJumpUp(); return; }
     if (input.jumpPressed) { this.beginJumpFwd(false); return; } // standing/walking jump = fixed standing distance
@@ -252,8 +279,12 @@ export class Player {
     if (input.jumpPressed) { this.row = Math.round((this.y + this.halfH) / this.block); this.y = this.cy(this.row); this.state = 'idle'; return; }
     let feetY = this.y + this.halfH;
     const v = M.climbSpeed * (dtMs / 1000);
-    if (input.upHeld) feetY = Math.max(this.climbTopY, feetY - v);
-    else if (input.downHeld) feetY = Math.min(this.climbBottomY, feetY + v);
+    // Shooting freezes climbing — you can fire on the ladder, but not climb and shoot at once.
+    const firing = input.firePressed && this.armed;
+    if (!firing) {
+      if (input.upHeld) feetY = Math.max(this.climbTopY, feetY - v);
+      else if (input.downHeld) feetY = Math.min(this.climbBottomY, feetY + v);
+    }
     this.y = feetY - this.halfH;
 
     const dir = Math.sign(input.moveX);
@@ -272,6 +303,15 @@ export class Player {
     else if (floors === 2) this.takeDamage(1, true); // exactly 2 floors → lose 1 heart (1 floor = safe)
   }
 
+  // Hang-drops are measured in BLOCKS from the platform you hung from down to the one you land on
+  // (1 grid row = 1 block). Hanging already lowered you ~1 floor, so this is one floor more lenient
+  // than a jump/walk fall: ≤8 blocks → safe, 9–12 → lose 1 heart, ≥13 → dead.
+  private applyHangFallDamage(landRow: number) {
+    const blocks = landRow - this.hangStandRow;
+    if (blocks >= 13) this.die();
+    else if (blocks >= 9) this.takeDamage(1, true);
+  }
+
   // ---- action starters ------------------------------------------------------
   private start(a: Omit<Action, 'fromX' | 'fromY' | 'start'>) {
     if (a.type !== 'run') this.runDist = 0; // any non-run action breaks the run-up streak
@@ -287,12 +327,36 @@ export class Player {
   private canStand(c: number, r: number) {
     return this.grid.isStandFloor(c, r) && !this.grid.isSolid(c, r - 1) && !this.grid.isSolid(c, r - 2);
   }
+  // crouched: only needs ONE cell of headroom (the head is tucked down), so you fit under low platforms
+  private canCrouchStand(c: number, r: number) {
+    return this.grid.isStandFloor(c, r) && !this.grid.isSolid(c, r - 1);
+  }
+
+  // ---- crouch (sit + hop) ---------------------------------------------------
+  private updateCrouch(input: InputManager) {
+    const lowCeil = this.grid.isSolid(this.col, this.row - 2); // a platform right overhead → can't stand up here
+    // stand up when Down is released and there's room above
+    if (!input.downHeld && !lowCeil) { this.crouching = false; this.state = 'idle'; return; }
+    // hop up out of the crouch if there's headroom and you press jump
+    if (input.jumpPressed && !lowCeil) { this.crouching = false; this.beginJumpFwd(false); return; }
+    // shuffle left/right in small hops while crouched (like a careful step)
+    const dir = Math.sign(input.moveX) as 1 | -1 | 0;
+    if (dir === 0) return;
+    if (dir !== this.facing) { this.facing = dir; return; } // turn in place first
+    this.beginCrouchStep(dir);
+  }
+  private beginCrouchStep(dir: 1 | -1) {
+    const c2 = this.col + dir;
+    if (!this.canCrouchStand(c2, this.row) || this.grid.isSpike(c2, this.row)) { this.state = 'crouch'; return; } // wall/edge/spike → stay put
+    this.start({ type: 'step', dur: M.stepMs * 1.45, toX: this.cx(c2), toY: this.y, arc: false, peak: 0, strides: 1,
+      toCol: c2, toRow: this.row, onDone: () => { this.col = c2; this.x = this.cx(c2); this.onLadderStop = false; this.state = 'crouch'; } });
+  }
 
   private beginStep(dir: 1 | -1) {
     const c2 = this.col + dir;
     if (!this.canStand(c2, this.row)) { this.state = 'idle'; return; }   // wall or edge → careful, don't move
     if (this.grid.isSpike(c2, this.row)) { this.state = 'idle'; return; } // don't walk onto spikes — jump them
-    this.start({ type: 'step', dur: M.stepMs, toX: this.cx(c2), toY: this.y, arc: false, peak: 0, strides: 1,
+    this.start({ type: 'step', dur: M.stepMs * this.moveSpeedScale, toX: this.cx(c2), toY: this.y, arc: false, peak: 0, strides: 1,
       toCol: c2, toRow: this.row, onDone: () => {
         this.land(c2, this.row);
         if (this.bufferedJump) { this.bufferedJump = false; this.beginJumpFwd(this.bufferedJumpRun); } // jump while walking = standing distance
@@ -333,7 +397,7 @@ export class Player {
     // When running off an edge: extend animation one extra step past the platform into the gap,
     // so the player visually "runs over the edge" rather than teleporting into the fall.
     const runBlocks = willFall ? clear + 1 : clear;
-    const dur = M.runMs * Math.max(0.25, runBlocks / M.runBlocks);
+    const dur = M.runMs * Math.max(0.25, runBlocks / M.runBlocks) * this.moveSpeedScale;
     const toX  = willFall ? this.cx(destCol + dir) : this.cx(destCol);
     this.runDist += clear; // accumulate the unbroken run length (for the 3-block run-jump rule)
     this.start({ type: 'run', dur, toX, toY: this.y, arc: false, peak: 0, strides: Math.max(1, runBlocks),
@@ -406,12 +470,18 @@ export class Player {
     if (this.grid.isStandFloor(dest, this.row)) {
       this.start({ type: 'jumpFwd', dur, toX: this.cx(dest), toY: this.y, arc: true, peak, strides: 0,
         // a RUN-jump lands still running: keep the run-up so you flow straight into another run/run-jump
-        toCol: dest, toRow: this.row, onDone: () => { this.land(dest, this.row); if (running) this.runDist = M.runBlocks; } });
+        toCol: dest, toRow: this.row, onDone: () => {
+          this.land(dest, this.row);
+          if (running) {
+            this.runDist = M.runBlocks;
+            this.beginRun(this.facing); // carry momentum: auto-continue running after a run-jump landing
+          }
+        } });
     } else if (this.grid.isStandFloor(dest + s, this.row)) {
       // landed one block short of a ledge → grab its edge and hang (e.g. a 6-wide gap)
       const gc = dest + s, hangX = this.cx(dest), hangY = this.row * this.block + this.halfH;
       this.grabCol = gc; this.grabRow = this.row;
-      this.hangDropCol = gc; // use ledge column for floor search (finds floor just below the ledge)
+      this.hangDropCol = dest; // gap column = where player physically hangs; Down drop falls from here
       this.hangFromFall = false;
       // hang at `dest` (the cell you grabbed from) so pressing DOWN drops you STRAIGHT down here,
       // not back at the take-off column; pressing UP still climbs onto the grabbed ledge `gc`.
@@ -517,7 +587,7 @@ export class Player {
     if (fromHang && driftDir === 0 && !noScan) {
       for (const adj of [this.facing, -(this.facing) as 1 | -1]) {
         const adjCol = col + adj;
-        for (let r = startRow + 1; r <= landRow; r++) {
+        for (let r = startRow + 1; r < landRow; r++) {
           if (this.grid.isStandFloor(adjCol, r) && !this.grid.isSolid(col, r - 1)) {
             const hangX = this.cx(adjCol) - (adj as number) * this.block * 0.5;
             const hangY = r * this.block + this.halfH;
@@ -551,7 +621,7 @@ export class Player {
     }
     const dur = Math.max(140, Math.abs(toY - this.y) * M.fallPxPerMs);
     this.start({ type: 'fall', dur, toX, toY, arc: false, peak: 0, strides: 0,
-      toCol: useCol, toRow: useLandRow, onDone: () => { if (!fromHang) this.applyFallDamage(useLandRow); this.land(useCol, useLandRow); } });
+      toCol: useCol, toRow: useLandRow, onDone: () => { if (!fromHang) this.applyFallDamage(useLandRow); else this.applyHangFallDamage(useLandRow); this.land(useCol, useLandRow); } });
   }
 
   /** Climb DOWN over a ledge edge: first lower yourself to HANG on the edge (back to the gap).
@@ -593,6 +663,7 @@ export class Player {
 
   private land(col: number, row: number) {
     this.col = col; this.row = row; this.x = this.cx(col); this.y = this.cy(row); this.state = 'idle';
+    this.crouching = false; // landed/standing normally
     this.onLadderStop = this.grid.isLadder(col, row); // stop & rest if we ended on a ladder
   }
 
@@ -629,20 +700,25 @@ export class Player {
   private syncVisual() {
     const now = this.scene.time.now;
     const bobY = this.y - this.bob;
+    const coverHidden = this.state === 'cover' && this.inCover;
     if (!this.alive) this.vis.setTint(0x556070);
-    else if (this.state === 'cover') this.vis.setTint(0x2b3340);
+    else if (this.state === 'cover') this.vis.setTint(coverHidden ? 0xb6c6d4 : 0x7a8a9c); // hiding = faintly lit, visible (not a black blob)
     else if (this.state === 'dash') this.vis.setTint(0x6ff0ff);   // dash = cyan streak
     else if (now < this.invulnUntil) this.vis.setTint(0xff6a6a);
     else this.vis.clearTint();
 
     let alpha = 1;
-    if (this.state === 'cover') alpha = this.inCover ? 0.45 : 0.85;
+    if (this.state === 'cover') alpha = this.inCover ? 0.6 : 0.85; // translucent contour while hidden
     else if (this.alive && now < this.invulnUntil) alpha = (Math.floor(now / 70) % 2) ? 0.55 : 1;
     // hang hangs from its HANDS at the ledge (top anchor); everything else is feet-anchored
     const isHang = this.coleSheet2 && this.state === 'hang';
     this.vis.setOrigin(0.5, isHang ? 0 : 1);
     const visY = !this.coleSheet ? bobY : (isHang ? bobY - this.halfH : bobY + this.halfH);
     this.vis.setAlpha(alpha).setPosition(this.x, visY).setFlipX(this.facing < 0);
+    // while hiding, lift the sprite above the darkness overlay and show a soft halo so you can see yourself
+    this.vis.setDepth(coverHidden ? 62 : 40);
+    this.coverGlow.setVisible(coverHidden);
+    if (coverHidden) this.coverGlow.setPosition(this.x, this.y - 8).setScale(0.42).setAlpha(0.13);
 
     // animation by state
     let animKey = '', staticTex = '', frameName = '', frameTex = 'cole_sheet', scale = Player.SCALE1;
@@ -658,11 +734,12 @@ export class Player {
           else frameName = 'jump5';
           break;
         case 'hang': if (this.coleSheet2) { frameTex = 'cole_sheet2'; frameName = 'hang1'; scale = Player.SCALE2; } else frameName = 'jump2'; break;
-        case 'cover': frameName = 'crouch0'; break;
+        case 'cover': frameName = 'idle0'; break; // stand while hiding (not crouched)
         case 'turn': frameName = 'idle0'; break;
         case 'melee': frameName = 'run3'; break;
         default: animKey = 'cole_idle';
       }
+      if (this.crouching) { animKey = ''; staticTex = ''; frameTex = 'cole_sheet'; frameName = 'crouch0'; scale = Player.SCALE1; } // sitting pose overrides walk/idle
       this.vis.setScale(scale);
       // (re)play when it's a different anim OR the current one was stopped (e.g. after a turn set a static frame)
       if (animKey) { if (this.vis.anims.currentAnim?.key !== animKey || !this.vis.anims.isPlaying) this.vis.play(animKey, true); }
@@ -681,23 +758,16 @@ export class Player {
     }
 
     const hidden = this.state === 'cover' && this.inCover;
-    const showGun = this.armed && this.alive && !hidden && this.state !== 'hang' && this.state !== 'climbUp' && this.state !== 'climb';
+    const showGun = this.armed && this.alive && !hidden && this.state !== 'climbUp'; // gun shown on ladder & hang, hidden only during the mantle
     this.gun.setVisible(showGun);
     const gs = this.gunScale;
     this.gun.setPosition(this.x + this.facing * 3, bobY - 14).setRotation(this.aimAngle).setScale(gs, this.facing < 0 ? -gs : gs);
   }
 
-  /** A loose tile crumbled under the player's feet — drop through immediately. */
-  tileCollapsed(col: number, row: number) {
-    const physCol = Math.floor(this.x / this.block);
-    const grounded = this.state === 'idle' || this.state === 'run' || this.state === 'step' ||
-                     this.state === 'dash' || this.state === 'turn' || this.state === 'melee';
-    if (grounded && this.row === row && physCol === col) {
-      this.act = undefined; this.bufferedJump = false;
-      this.col = col; this.x = this.cx(col);
-      this.beginFall(col, row + 1);
-    }
-  }
+  /** A loose tile crumbled. Whether you fall is decided in handleReady (which knows your input):
+   *  keep holding a direction toward solid ground and you run across; stop over the hole and you drop.
+   *  So this is a no-op — it must NOT drop you in the idle frame between two run-steps. */
+  tileCollapsed(_col: number, _row: number) { /* falling handled by the floor check in handleReady */ }
 
   destroy() { this.vis?.destroy(); this.gun?.destroy(); }
 }

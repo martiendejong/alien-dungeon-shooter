@@ -7,7 +7,7 @@ export interface LightDef {
 }
 
 export type EnemyKind = 'guard' | 'crawler' | 'grenadier' | 'warden' | 'subject' | 'queen' | 'commander' | 'overmind'
-  | 'trooper_red' | 'trooper_gold' | 'marksman' | 'sniper' | 'bomber' | 'hunter' | 'leaper' | 'brute' | 'drone' | 'gundrone';
+  | 'trooper_red' | 'trooper_gold' | 'marksman' | 'sniper' | 'bomber' | 'hunter' | 'leaper' | 'brute' | 'drone' | 'gundrone' | 'heavygunner';
 
 /**
  * Grid level. `grid` is rows of chars:

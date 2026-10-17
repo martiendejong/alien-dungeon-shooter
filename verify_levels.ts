@@ -46,5 +46,5 @@ function check(L: LevelData) {
   return { id: L.id, size: `${COLS}x${ROWS}`, spawn: P, exit: E, solvable, reach: seen.size, ladderPierces: pierces.length };
 }
 
-const IDS = ['level0', 'level1', 'level2', 'level3', 'level4', 'level5'];
+const IDS = ['level0', 'level1', 'level2', 'level3', 'level4', 'level5', 'level6', 'level7', 'level8', 'level9', 'level10'];
 for (const id of IDS) console.log(JSON.stringify(check(parseLevel(id, readFileSync(`src/levels/${id}.lvl`, 'utf8')))));
