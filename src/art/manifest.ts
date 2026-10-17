@@ -10,19 +10,42 @@
  *   { key: 'tile_brick', file: 'assets/tiles/brick.png' },
  */
 export const ASSETS: AssetEntry[] = [
-  // riveted steel/concrete bunker block -> all solid wall + floor tiles
-  { key: 'tile_rock_0', file: 'assets/tiles/block.png' },
-  { key: 'tile_rock_1', file: 'assets/tiles/block.png' },
-  { key: 'tile_rock_2', file: 'assets/tiles/block.png' },
-  { key: 'tile_rock_3', file: 'assets/tiles/block.png' },
-  // floor surface (lit walkable lip on top) -> the walkable-surface tiles
-  { key: 'tile_solid_0', file: 'assets/tiles/floor.png' },
-  { key: 'tile_solid_1', file: 'assets/tiles/floor.png' },
-  { key: 'tile_solid_2', file: 'assets/tiles/floor.png' },
-  // background brick wall -> tiled (10x10) behind the rooms
-  { key: 'tile_brick', file: 'assets/tiles/brick.png' },
-  // pop-out spike trap (from the ChatGPT traps sheet)
+  // master-tileset walls + floors (from the ChatGPT Military Base master tileset)
+  { key: 'tile_rock_0', file: 'assets/tiles/wall_a.png' },
+  { key: 'tile_rock_1', file: 'assets/tiles/wall_b.png' },
+  { key: 'tile_rock_2', file: 'assets/tiles/wall_c.png' },
+  { key: 'tile_rock_3', file: 'assets/tiles/wall_d.png' },
+  { key: 'tile_solid_0', file: 'assets/tiles/floor_a.png' },
+  { key: 'tile_solid_1', file: 'assets/tiles/floor_b.png' },
+  { key: 'tile_solid_2', file: 'assets/tiles/floor_c.png' },
+  // background wall -> tiled behind the rooms
+  { key: 'tile_brick', file: 'assets/tiles/bgwall.png' },
+  { key: 'tile_platform', file: 'assets/tiles/platform_lip.png' },
+  { key: 'tile_ladder', file: 'assets/tiles/ladder.png' },
+  { key: 'tile_hide', file: 'assets/tiles/hide.png' },
+  // per-world themed variants (picked up by GameScene.tkey when present)
+  { key: 'tile_rock_0_hive', file: 'assets/tiles/wall_hive.png' },
+  { key: 'tile_brick_hive', file: 'assets/tiles/bgwall_hive.png' },
+  { key: 'tile_rock_0_under', file: 'assets/tiles/wall_under.png' },
+  { key: 'tile_brick_under', file: 'assets/tiles/bgwall_under.png' },
+  // mechanisms (from the ChatGPT mechanisms sheet): gate cell, pressure plate, portal
+  { key: 'door', file: 'assets/tiles/gate.png' },
+  { key: 'plate', file: 'assets/tiles/plate_up.png' },
+  { key: 'plate_dn', file: 'assets/tiles/plate_down.png' },
+  { key: 'portal', file: 'assets/tiles/portal.png' },
+  // hazards + pickups
   { key: 'spikes', file: 'assets/tiles/spikes.png' },
+  { key: 'flame', file: 'assets/tiles/flame.png' },
+  { key: 'medkit', file: 'assets/tiles/medkit.png' },
+  { key: 'ammo', file: 'assets/tiles/ammo.png' },
+  // wall props (lighting + mechanisms sheets)
+  { key: 'prop_lamp', file: 'assets/props/walllamp.png' },
+  { key: 'prop_beacon', file: 'assets/props/beacon.png' },
+  { key: 'prop_ceillamp', file: 'assets/props/ceilinglamp.png' },
+  { key: 'prop_fan', file: 'assets/props/fan.png' },
+  { key: 'prop_camera', file: 'assets/props/camera.png' },
+  { key: 'prop_barrel', file: 'assets/props/barrel.png' },
+  { key: 'prop_crate', file: 'assets/props/crate.png' },
   // real enemy art (from the ChatGPT enemy sheet): alien spitter -> Subject Zero + brute,
   // alien claw -> the Queen, gun-drone -> drone/gundrone
   { key: 'subject_0', file: 'assets/enemies/subject_0.png' },

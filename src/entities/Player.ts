@@ -71,7 +71,7 @@ export class Player {
   // each sheet is drawn at a different size — normalise so the character stays consistent on screen
   private static readonly SCALE1 = 0.46; // sheet 1 (idle/walk/run/jump/crouch)
   private static readonly SCALE2 = 0.27; // sheet 2 (hang/mantle)
-  private static readonly SCALE3 = 0.20; // sheet 3 (ladder)
+  private static readonly SCALE3 = 0.32; // sheet 3 (ladder; dude3 frames are 200px tall → ~64px)
 
   constructor(scene: Phaser.Scene, grid: LevelGrid, col: number, floorRow: number) {
     this.scene = scene; this.grid = grid; this.block = grid.block;

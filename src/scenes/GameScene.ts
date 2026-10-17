@@ -78,6 +78,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
   private searchX = 0; private searchDir: 1 | -1 = 1; private searchBeam?: Phaser.GameObjects.Image; private spottedCd = 0;
   private waveQueue: { kind: EnemyKind; col: number; floorRow: number }[] = []; private nextWaveAt = 0;
   private hazards: { col: number; floorRow: number; periodMs: number; onMs: number; offset: number; kind?: 'flame' | 'spike'; img: Phaser.GameObjects.Image }[] = [];
+  private theme = ''; // per-world tile theme suffix ('' = base military look)
   // PoP-style timed gates + pressure plates
   private gateCells = new Set<number>();
   private gates: { id: number; col: number; row0: number; row1: number; openMs: number; stayOpen?: boolean; color?: number; openUntil: number; open: boolean; imgs: Phaser.GameObjects.Image[] }[] = [];
@@ -111,6 +112,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     this.grenadeCount = TUNING.grenade.startCount; this.meleeHits.clear();
     this.level = LEVELS[data?.level ?? 'level1'];
     this.levelTier = Math.max(0, (parseInt(this.level.id.replace(/\D/g, ''), 10) || 1) - 1); // level1→0, level2→1 … each = a new enemy color + extra life
+    this.theme = ({ level2: 'hive', level3: 'hive', level10: 'hive', level7: 'under' } as Record<string, string>)[this.level.id] ?? '';
     this.grid = new LevelGrid(this.level.grid, this.level.block);
     this.block = this.level.block;
     // gate cells must be known BEFORE buildSolids so the wall mesh skips them (doors are drawn separately)
@@ -292,14 +294,20 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
     return ts;
   }
 
+  /** themed texture key: use the per-world variant (e.g. tile_rock_0_hive) when it exists */
+  private tkey(key: string): string {
+    return this.theme && this.textures.exists(key + '_' + this.theme) ? key + '_' + this.theme : key;
+  }
+
   private buildBackground() {
     const b = this.block;
     // ONE world-size brick layer behind everything — tinted darker so the background recedes.
     // With a concept-art backdrop present, the brick goes translucent so the art shows through.
-    const brick = this.tileRegion(0, 0, this.grid.worldW, this.grid.worldH, 'tile_brick', 2, 'block').setTint(0x8c8c98);
+    const brick = this.tileRegion(0, 0, this.grid.worldW, this.grid.worldH, this.tkey('tile_brick'), 2, 'block').setTint(0x8c8c98);
     if (this.textures.exists('bg_' + this.level.id)) brick.setAlpha(0.42);
     // wall items hung on the brick (no windows). Lamps are weighted and also cast light.
-    const props = ['prop_lamp', 'prop_lamp', 'prop_pipes', 'prop_chains', 'prop_grate', 'prop_sign'];
+    const props = ['prop_lamp', 'prop_lamp', 'prop_ceillamp', 'prop_pipes', 'prop_chains', 'prop_grate', 'prop_sign',
+      'prop_fan', 'prop_camera', 'prop_barrel', 'prop_crate', 'prop_beacon'].filter(k => this.textures.exists(k));
     this.lampPositions = [];
     for (let r = 0; r < this.grid.rows; r++)
       for (let c = 0; c < this.grid.cols; c++) {
@@ -307,7 +315,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
         const key = props[(this.cellHash(c, r) >> 5) % props.length];
         const x = c * b + b / 2, y = r * b + b / 2;
         this.add.image(x, y, key).setDepth(3);
-        if (key === 'prop_lamp') this.lampPositions.push({ x, y });
+        if (key === 'prop_lamp' || key === 'prop_ceillamp') this.lampPositions.push({ x, y });
       }
   }
 
@@ -353,7 +361,7 @@ export class GameScene extends Phaser.Scene implements LevelQuery, EnemyHost, Co
         const x = c * b, y = r * b, pw = w * b, ph = h * b;
         // thin platforms render as a flat floating ledge only (drawn in the floor pass) — no chunky rock body.
         // thick ground/walls keep a rock body, tinted dark so it recedes behind the lit walking surface.
-        if (!this.isThinPlatform(c, r, w, h)) this.tileRegion(x, y, pw, ph, 'tile_rock_0', 20, 'block').setTint(0xcacad4);
+        if (!this.isThinPlatform(c, r, w, h)) this.tileRegion(x, y, pw, ph, this.tkey('tile_rock_0'), 20, 'block').setTint(0xcacad4);
         const body = this.add.rectangle(x + pw / 2, y + ph / 2, pw, ph).setVisible(false);
         this.physics.add.existing(body, true);
         this.solidsGroup.add(body);
