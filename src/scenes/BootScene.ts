@@ -7,11 +7,13 @@ import { ASSETS } from '../art/manifest';
 const COLE_SHEET = 'cole_sheet';
 const COLE_SHEET_FILE = 'assets/tiles/dude1.png';
 const COLE_FRAMES: Record<string, number[][]> = {
-  idle: [[4,4,28,121],[36,4,51,114],[4,4,28,121],[36,4,51,114],[4,4,28,121],[36,4,51,114]],
-  walk: [[1297,4,31,121],[1332,4,54,116],[1390,4,60,121],[1454,4,66,120],[1524,4,63,117],[1591,4,61,120],[1656,4,58,119],[1718,4,60,118]],
-  run: [[675,4,81,104],[760,4,62,94],[826,4,76,113],[906,4,80,99],[990,4,87,94],[1081,4,63,108],[1148,4,83,108],[1235,4,58,93]],
-  jump: [[283,4,63,93],[350,4,47,107],[401,4,62,124],[467,4,61,123],[532,4,55,123],[591,4,45,144],[640,4,31,157]],
-  crouch: [[91,4,69,115],[164,4,63,93],[231,4,48,118]],
+  idle: [[4,40,67,121],[75,47,67,114],[4,40,67,121],[75,47,67,114],[4,40,67,121],[75,47,67,114]],
+  walk: [[2566,44,76,117],[2646,45,76,116],[2726,44,76,117],[2806,40,76,121],[2886,40,76,121],[2966,41,76,120],[3046,42,76,119],[3126,44,76,117],[3206,44,76,117],[3286,41,76,120],[3366,40,76,121],[3446,42,76,119],[3526,43,76,118],[3606,43,76,118]],
+  run: [[1054,57,104,104],[1162,59,104,102],[1270,67,104,94],[1378,52,104,109],[1486,48,104,113],[1594,67,104,94],[1702,62,104,99],[1810,53,104,108],[1918,67,104,94],[2026,54,104,107],[2134,53,104,108],[2242,57,104,104],[2350,53,104,108],[2458,68,104,93]],
+  jump: [[389,68,91,93],[484,54,91,107],[579,37,91,124],[674,38,91,123],[769,38,91,123],[864,17,91,144],[959,4,91,157]],
+  crouch: [[146,46,77,115],[227,68,77,93],[308,43,77,118]],
+  hurt: [[3686,31,84,130]],
+  death: [[3774,95,182,66],[3960,108,182,53],[4146,115,182,46],[4332,116,182,45]],
 };
 // dude2.png — hang→mantle→stand ledge-climb sequence (8 frames, character only)
 const COLE_SHEET2 = 'cole_sheet2';
@@ -222,9 +224,10 @@ export class BootScene extends Phaser.Scene {
     if (this.coleReady) {
       const sf = (name: string, n: number) => Array.from({ length: n }, (_, i) => ({ key: COLE_SHEET, frame: `${name}${i}` }));
       a.create({ key: 'cole_idle', frames: sf('idle', 6), frameRate: 6, repeat: -1 });
-      a.create({ key: 'cole_walk', frames: sf('walk', 8), frameRate: 11, repeat: -1 });
-      a.create({ key: 'cole_run',  frames: sf('run', 8),  frameRate: 16, repeat: -1 });
+      a.create({ key: 'cole_walk', frames: sf('walk', 14), frameRate: 15, repeat: -1 });
+      a.create({ key: 'cole_run',  frames: sf('run', 14),  frameRate: 19, repeat: -1 });
       a.create({ key: 'cole_jump', frames: sf('jump', 7), frameRate: 12, repeat: 0 });
+      a.create({ key: 'cole_death', frames: sf('death', 4), frameRate: 7, repeat: 0 });
       if (this.cole2Ready) {
         const hf = (i: number) => ({ key: COLE_SHEET2, frame: `hang${i}` });
         a.create({ key: 'cole_mantle', frames: [2, 3, 4, 5, 6, 7].map(hf), frameRate: 12, repeat: 0 });

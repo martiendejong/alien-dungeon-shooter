@@ -42,6 +42,7 @@ export class Player {
   private gun: Phaser.GameObjects.Image;
   private coverGlow!: Phaser.GameObjects.Image; // soft halo shown while hiding so you can see yourself
   private invulnUntil = 0;
+  private hurtUntil = 0; // while > now, show the hit-flinch frame
   private meleeUntil = 0;
   private meleeCdUntil = 0;
   private exposedUntil = 0;
@@ -130,6 +131,7 @@ export class Player {
     if (this.inCover && !ignoreCover) return false;
     this.hp -= hearts;
     this.invulnUntil = now + TUNING.player.invulnMs;
+    this.hurtUntil = now + 340; // brief hit-flinch pose
     this.scene.cameras.main.shake(120, 0.006);
     if (this.hp <= 0) { this.hp = 0; this.die(); }
     else this.interrupt(); // any hit cancels what you're doing and drops you to the floor below your current cell
@@ -724,6 +726,7 @@ export class Player {
     let animKey = '', staticTex = '', frameName = '', frameTex = 'cole_sheet', scale = Player.SCALE1;
     if (this.coleSheet) {
       switch (this.state) {
+        case 'dead': animKey = 'cole_death'; break;
         case 'step': animKey = 'cole_walk'; break;
         case 'run': case 'dash': animKey = 'cole_run'; break;
         case 'jumpUp': case 'jumpFwd': animKey = 'cole_jump'; break;
@@ -740,9 +743,16 @@ export class Player {
         default: animKey = 'cole_idle';
       }
       if (this.crouching) { animKey = ''; staticTex = ''; frameTex = 'cole_sheet'; frameName = 'crouch0'; scale = Player.SCALE1; } // sitting pose overrides walk/idle
+      // hit-flinch: briefly show the hurt pose over any grounded state (not while hanging/climbing)
+      if (this.alive && now < this.hurtUntil && this.isGrounded) { animKey = ''; frameTex = 'cole_sheet'; frameName = 'hurt0'; scale = Player.SCALE1; }
       this.vis.setScale(scale);
-      // (re)play when it's a different anim OR the current one was stopped (e.g. after a turn set a static frame)
-      if (animKey) { if (this.vis.anims.currentAnim?.key !== animKey || !this.vis.anims.isPlaying) this.vis.play(animKey, true); }
+      // (re)play when it's a different anim OR a LOOPING one was stopped (e.g. after a turn set a
+      // static frame). A finished one-shot (death) must NOT restart.
+      if (animKey) {
+        const cur = this.vis.anims.currentAnim;
+        if (cur?.key !== animKey) this.vis.play(animKey, true);
+        else if (!this.vis.anims.isPlaying && cur.repeat !== 0) this.vis.play(animKey, true);
+      }
       else { this.vis.anims.stop(); if (this.vis.texture.key !== frameTex || this.vis.frame.name !== frameName) this.vis.setTexture(frameTex, frameName); }
     } else {
       switch (this.state) {
